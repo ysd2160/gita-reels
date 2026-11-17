@@ -1,0 +1,21 @@
+[Unit]
+Description=Gita Reels Studio (generate + auto-upload)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=__APP_DIR__
+EnvironmentFile=__APP_DIR__/.env
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node server/index.js
+Restart=always
+RestartSec=5
+# a Remotion render can use a lot of RAM; let the OS kill only this service, not the whole server
+OOMScoreAdjust=300
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

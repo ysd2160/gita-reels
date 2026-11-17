@@ -1,0 +1,37 @@
+{
+  "name": "gita-reels",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Automated faceless Bhagavad Gita reels: Gemini script -> edge-tts voice -> Remotion render -> dashboard",
+  "scripts": {
+    "start": "node server/index.js",
+    "make": "node server/cli.js",
+    "studio": "remotion studio src/remotion/index.ts",
+    "typecheck": "tsc --noEmit",
+    "build:editor": "node scripts/build-editor.mjs",
+    "prestart": "npm run build:editor"
+  },
+  "dependencies": {
+    "@remotion/bundler": "4.0.543",
+    "@remotion/cli": "4.0.543",
+    "@remotion/google-fonts": "4.0.543",
+    "@remotion/player": "4.0.543",
+    "@remotion/renderer": "4.0.543",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "mongoose": "^8.5.0",
+    "music-metadata": "^10.0.0",
+    "node-cron": "^3.0.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "remotion": "4.0.543"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.7",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.5.0"
+  }
+}
