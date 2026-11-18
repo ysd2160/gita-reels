@@ -1,11 +1,12 @@
 import { config } from '../config.js';
 import { VERSES, verseById } from '../verses.js';
+import { FORMATS, formatById } from '../formats.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function callGemini({ contents, system, temperature = 0.9 }) {
+export async function callGemini({ contents, system, temperature = 0.9, model }) {
   if (!config.gemini.key) throw new Error('GEMINI_API_KEY .env mein set nahi hai');
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${config.gemini.model}:generateContent`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model || config.gemini.model}:generateContent`;
   let lastErr;
   for (let attempt = 1; attempt <= 4; attempt++) {
     try {
@@ -35,7 +36,7 @@ async function callGemini({ contents, system, temperature = 0.9 }) {
   }
   throw lastErr;
 }
-const asContents = (prompt) => [{ role: 'user', parts: [{ text: prompt }] }];
+export const asContents = (prompt, extraParts = []) => [{ role: 'user', parts: [...extraParts, { text: prompt }] }];
 
 // ---------------------------------------------------------------- script shape
 export function validateScript(s) {
@@ -49,16 +50,23 @@ export function validateScript(s) {
       image: String(l.image || '').trim(),
     }))
     .filter((l) => l.show);
-  if (lines.length < 5 || lines.length > 14) throw new Error(`lines count invalid: ${lines.length}`);
-  const verse = verseById(s.verse_id ?? s.verseId);
-  if (!verse) throw new Error(`unknown verse_id: ${s.verse_id ?? s.verseId}`);
+  if (lines.length < 5 || lines.length > 26) throw new Error(`lines count invalid: ${lines.length}`);
+  // a verse is optional: story / mystery / deep-truth reels have no shlok. If a verse_id is given it is chanted.
+  const rawVerse = s.verse_id ?? s.verseId;
+  const verse = rawVerse && rawVerse !== 'null' ? verseById(rawVerse) : null;
+  if (rawVerse && rawVerse !== 'null' && !verse) throw new Error(`unknown verse_id: ${rawVerse}`);
+  const fmt = formatById(s.format_id ?? s.formatId) || (verse ? formatById('classic') : formatById('story'));
   let idx = Number.isInteger(s.shlok_line_index ?? s.shlokLineIndex) ? (s.shlok_line_index ?? s.shlokLineIndex) : 3;
   idx = Math.min(Math.max(idx, 1), lines.length - 2);
   const tags = s.hashtags || [];
+  const grounding = s.grounding_id ?? s.groundingId;
   return {
-    verseId: verse.id,
+    formatId: fmt.id,
+    verseId: verse ? verse.id : null,
+    groundingId: grounding && verseById(grounding) ? grounding : null,
+    targetSec: Number(s.target_sec ?? s.targetSec) || null,
     lines,
-    shlokLineIndex: idx,
+    shlokLineIndex: verse ? idx : null,
     hookText: String(s.hook_text ?? s.hookText ?? lines[0].show).trim(),
     cta: String(s.cta || 'Follow for daily Gita wisdom').trim(),
     caption: String(s.caption || '').trim(),
@@ -66,7 +74,7 @@ export function validateScript(s) {
   };
 }
 export const toApiShape = (s) => ({
-  verse_id: s.verseId, hook_text: s.hookText, lines: s.lines, shlok_line_index: s.shlokLineIndex,
+  format_id: s.formatId, verse_id: s.verseId, grounding_id: s.groundingId, target_sec: s.targetSec, hook_text: s.hookText, lines: s.lines, shlok_line_index: s.shlokLineIndex,
   cta: s.cta, caption: s.caption, hashtags: s.hashtags,
 });
 
@@ -94,70 +102,6 @@ FIELDS
 - "show": the line in natural Hinglish (Hindi words in Roman letters, English words as they are), exactly how a young Indian creator speaks. This text is both the on-screen caption AND what the narrator says, so write it to be spoken: simple consistent spelling (nahi, hai, kyun, tum, mat), commas/full stops/... where a human would pause. Wrap 1 key emotional word per line in *asterisks*, e.g. "Tum *overthink* nahi kar rahe".
 - "image": English prompt for an AI image generator for that line: concrete scene + lighting + mood, 15-30 words. NO close-up faces: prefer silhouettes seen from behind, hands, symbolic objects (diya, clock, mirror, storm, river, chariot, candle, empty road), landscapes. Consecutive lines must look DIFFERENT. Show the emotion of the line visually. For the Krishna line: silhouette of Lord Krishna playing flute with peacock feather against glowing sky. No text/letters in the image.
 - "visual": 2-4 word stock-footage search fallback for the same scene (e.g. "rain window night").`;
-
-function draftPrompt(topic, hookStyle, recentHooks) {
-  const bank = VERSES.map((v) => `- ${v.id} | ${v.ref} | themes: ${v.themes}\n    meaning: ${v.meaning}`).join('\n');
-  return `You are the lead writer of a Hindi/Hinglish spiritual short-video channel "Bhagavad Gita For Modern Problems" (Instagram Reels / YouTube Shorts).
-
-TOPIC: ${topic}
-HOOK STYLE FOR THIS REEL: ${hookStyle}
-Do NOT reuse or paraphrase these recent hooks:
-${recentHooks.length ? recentHooks.map((h) => `- ${h}`).join('\n') : '(none)'}
-
-Pick exactly ONE verse from this bank that best fits (use its id):
-${bank}
-${SCRIPT_RULES}
-
-Return JSON ONLY:
-{
-  "verse_id": "bg-2-47",
-  "hook_text": "max 7 words, Roman Hinglish, big on-screen title in first 2 seconds",
-  "lines": [ { "show": "...", "image": "...", "visual": "..." } ],
-  "shlok_line_index": 4,
-  "cta": "max 6 words on-screen end text",
-  "caption": "1-2 line post caption ending with a question",
-  "hashtags": ["#bhagavadgita", "..."]
-}
-hashtags: 8-10, mix broad and topic-specific.`;
-}
-
-function polishPrompt(draft) {
-  return `You are a ruthless short-form video editor. Below is a DRAFT reel script (JSON). Make it genuinely better, not just reworded:
-1. Hook: would a stranger stop scrolling in 2 seconds? If not, rewrite it sharper (max 8 words).
-2. Delete anything that sounds like generic AI/motivational-poster talk. Replace with a specific, concrete, human moment.
-3. Every line max 10 words, total 60-80 words, no two lines saying the same thing.
-4. The verse meaning must stay faithful to this: see verse bank below. The line before the chant must lead into it naturally.
-5. The final line must make people want to comment or rewatch.
-6. Make sure every "image" prompt matches its line's emotion, has no close-up faces, and consecutive images differ.
-7. Keep the same JSON schema and field names. Keep "*word*" emphasis markers in "show" (1 per line). "show" stays natural spoken Hinglish.
-${VERSES.map((v) => `${v.id}: ${v.meaning}`).join('\n')}
-
-DRAFT:
-${JSON.stringify(draft)}
-
-Return the improved script as JSON ONLY.`;
-}
-
-export async function generateScript(topic, recentHooks = []) {
-  const hookStyle = HOOK_STYLES[Math.floor(Math.random() * HOOK_STYLES.length)];
-  let draft;
-  let lastErr;
-  for (let i = 0; i < 3 && !draft; i++) {
-    try {
-      const raw = await callGemini({ contents: asContents(draftPrompt(topic, hookStyle, recentHooks)), temperature: 0.95 });
-      validateScript(raw);
-      draft = raw;
-    } catch (e) { lastErr = e; }
-  }
-  if (!draft) throw new Error(`Script generation failed: ${lastErr?.message}`);
-  let final = null;
-  try { // second pass: editor polish (falls back to the draft if it breaks anything)
-    final = validateScript(await callGemini({ contents: asContents(polishPrompt(draft)), temperature: 0.6 }));
-  } catch { /* keep draft */ }
-  const out = final || validateScript(draft);
-  out.lines.forEach((l) => { if (!l.visual) l.visual = topic; if (!l.image) l.image = `${l.visual}, cinematic, moody lighting`; });
-  return out;
-}
 
 export async function generateTopics(count = 20, existing = []) {
   const prompt = `Give ${count} fresh, specific, highly relatable modern-life problems (young Indian audience, 18-35) for short videos that answer each with a Bhagavad Gita verse. Style examples: "Overthinking at 3 AM", "Heartbreak after breakup", "Feeling behind in life". Avoid duplicates of: ${existing.slice(-60).join(', ') || 'none'}.
@@ -203,11 +147,12 @@ export async function scriptFromText(text, topic, format = 'short') {
 SCRIPT:
 ${clean}
 
-Pick the best verse from this bank (id):
+Decide what kind of reel this is: ${FORMATS.map((f) => `"${f.id}" (${f.label}${f.shlok ? ', has a chanted shlok' : ', no shlok'})`).join(', ')}.
+- If it is a story / mystery / list / dialogue / challenge that needs NO verse, set format_id accordingly, verse_id null and shlok_line_index null. Do NOT force a shlok into it.
+- If the script talks about Krishna's words or explains a verse, set a "shlok" format, pick the best verse from this bank (id) and set shlok_line_index (0-based line after which the narrator chants it). If the script does not already introduce Krishna/the Gita right before the meaning, add ONE short lead-in line like "Shri Krishna ne Gita mein kaha tha..." at the right place.
 ${bank}
-If the script does not already introduce Krishna/the Gita before the meaning, add ONE short lead-in line like "Shri Krishna ne Gita mein kaha tha..." at the right place (its 0-based index = shlok_line_index; the narrator chants the verse right after it).
 Fields: ${imageRules}
-Return JSON ONLY: { "verse_id": "...", "hook_text": "max 7 words", "lines": [ { "show": "...", "image": "...", "visual": "..." } ], "shlok_line_index": 3, "cta": "max 6 words", "caption": "1-2 line post caption ending with a question", "hashtags": ["#..."] }`;
+Return JSON ONLY: { "format_id": "story", "verse_id": null, "hook_text": "max 7 words", "lines": [ { "show": "...", "image": "...", "visual": "..." } ], "shlok_line_index": null, "cta": "max 6 words", "caption": "1-2 line post caption ending with a question", "hashtags": ["#..."] }`;
     const s = validateScript(await callGemini({ contents: asContents(prompt), temperature: 0.3 }));
     s.lines.forEach((l) => { if (!l.visual) l.visual = topic || 'sunrise mountain mist'; if (!l.image) l.image = `${l.visual}, cinematic, moody lighting`; });
     return s;
@@ -251,17 +196,20 @@ Return JSON ONLY: { "section_title": "max 5 words", "verse_id": "bg-2-47 or null
 /** ChatGPT-style assistant inside the dashboard. May return an updated script for the selected reel. */
 export async function chatAssistant(messages, reel) {
   const system = `You are the creative partner of a Hindi/Hinglish faceless spiritual channel ("Bhagavad Gita For Modern Problems", Reels/Shorts, 25-40 sec). Talk to the creator in friendly Hinglish. You suggest viral topics, hooks, scripts, captions, posting ideas and improve scripts. Be concrete and honest (say if a hook is weak). Keep replies compact.
+Reels are 30-60 seconds (about 2.4 spoken words per second; a chanted shlok adds ~12 s). Reel formats (field format_id): ${FORMATS.map((f) => `${f.id} = ${f.label} (${f.shlok ? 'with shlok' : 'no shlok'})`).join('; ')}.
+Not every reel needs a shlok: story, mystery, deep-truth, dialogue, myth and challenge reels have verse_id null and shlok_line_index null. Never repeat the same hook style or the same shlok back to back.
 Verse bank (only these verse_ids may be used):
 ${VERSES.map((v) => `${v.id}: ${v.ref} (${v.themes})`).join('\n')}
 ${SCRIPT_RULES}
+(The "9 to 11 lines / 60-80 words / structure" lines above describe only the classic shlok reel. For any other format follow that format's shape and aim for a 30-60 second reel, i.e. roughly 70-140 spoken words.)
 
 ${reel?.script ? `CURRENTLY SELECTED ${reel.format === 'long' ? 'LONG VIDEO' : 'REEL'} (topic: ${reel.topic}). Script JSON:\n${JSON.stringify({ ...toApiShape(reel.script), lines: reel.script.lines.map(({ show, image, visual }) => ({ show, image, visual })) }, null, 1)}` : 'No reel is selected right now.'}
 
 Always answer with JSON ONLY:
 {
   "reply": "your message (plain text, can use line breaks and short lists)",
-  "updated_script": null OR the COMPLETE updated script object (same shape as the script JSON above) - only when the creator asks to change/improve/rewrite the SELECTED reel's script,
-  "new_script": null OR a COMPLETE script object for a NEW reel (same shape: verse_id, hook_text, lines[{show,image,visual}], shlok_line_index, cta, caption, hashtags) - when the creator asks you to write a script for a topic/idea (the creator can then press "Make video" to produce it exactly as written),
+  "updated_script": null OR the COMPLETE updated script object (same shape as the script JSON above, keep format_id) - only when the creator asks to change/improve/rewrite the SELECTED reel's script,
+  "new_script": null OR a COMPLETE script object for a NEW reel (same shape: format_id, verse_id or null, hook_text, lines[{show,image,visual}], shlok_line_index or null, cta, caption, hashtags) - when the creator asks you to write a script for a topic/idea (the creator can then press "Make video" to produce it exactly as written),
   "topics": [ "optional list of topic ideas if the creator asked for ideas" ]
 }`;
   const contents = messages.slice(-14).map((m) => ({
@@ -373,4 +321,48 @@ Give ${shorts} SHORT-video topics (specific relatable problems, max 6 words each
 Return JSON ONLY: { "shorts": ["..."], "long": ["..."] }`;
   const o = await callGemini({ contents: asContents(prompt), temperature: 1 });
   return { shorts: (o.shorts || []).map(String).slice(0, shorts), long: (o.long || []).map(String).slice(0, long) };
+}
+
+
+// ---------------------------------------------------------------- weekly plan
+/** Topics for planned shorts. slots = [{formatId}] -> one topic per slot, each fitting its format. */
+export async function generateWeekTopics({ slots, avoid = [], brief = '' }) {
+  if (!slots.length) return [];
+  const list = slots.map((sl, i) => { const f = formatById(sl.formatId); return `${i + 1}. format "${f.label}" (${f.shlok ? 'will have a chanted shlok' : 'no shlok'}) - ${f.desc}`; }).join('\n');
+  const prompt = `Plan content for a Hindi/Hinglish channel "Bhagavad Gita For Modern Problems" (young Indian audience, 18-35, 30-60 second reels).
+${brief ? `THE CREATOR'S BRIEF FOR THIS PERIOD (follow it): ${brief}\n` : ''}Give exactly ${slots.length} topics, one per numbered slot, each one fitting the slot's FORMAT:
+${list}
+Rules: specific and relatable (max 8 words), e.g. "Overthinking at 3 AM", "Karn ka sabse bada dukh", "Gita ka pehla shabd kya hai?", "Dost se dhokha". All topics must differ from each other and from: ${avoid.slice(-80).join(', ') || 'none'}. Spread different life problems (work, love, family, money, health of mind, comparison, anger, fear...) across the list.
+Return JSON ONLY: { "topics": ["...", "..."] } with exactly ${slots.length} strings in the same order.`;
+  const o = await callGemini({ contents: asContents(prompt), temperature: 1 });
+  return (o.topics || []).map((t) => String(t).trim());
+}
+
+/**
+ * Read a weekly plan from text and/or a file (PDF, image, txt) with Gemini.
+ * Returns [{ day, date, topic, formatId, notes, scriptText }] in the order of the document.
+ */
+export async function extractWeekPlan({ text = '', file = null, brief = '' }) {
+  const parts = [];
+  if (file?.data) parts.push({ inlineData: { mimeType: file.mime || 'application/pdf', data: file.data } });
+  const prompt = `The creator of a Hindi/Hinglish Bhagavad Gita reels channel gave you a WEEKLY CONTENT PLAN${file ? ' (attached file)' : ''}${text ? ' (pasted text below)' : ''}. Extract every planned reel, in order.
+${text ? `PASTED TEXT:\n"""\n${String(text).slice(0, 30000)}\n"""\n` : ''}${brief ? `Extra instruction from the creator: ${brief}\n` : ''}
+For each reel return:
+- "day": the day number inside the plan (1 = first day of the plan, 2 = second ...). If the plan names weekdays (Monday/Somvar ...) number them in the order they appear.
+- "date": "YYYY-MM-DD" ONLY if the document gives an explicit calendar date, else null.
+- "topic": short topic/title in Hinglish or English (max 9 words).
+- "format_id": the best match of ${FORMATS.map((f) => `"${f.id}" (${f.label})`).join(', ')}; null if you cannot tell. Words like kahani/story -> story, raaz/mystery/fact -> mystery, sawaal-jawab/Arjun -> dialogue, shlok -> classic or decode, "3 baatein/deep" -> deep_truth, myth -> myth, challenge/task -> challenge.
+- "notes": any angle, idea, hook, shlok or instruction the plan gives for this reel (one or two sentences, may be empty).
+- "script_text": the COMPLETE ready-to-speak script of this reel if the document contains one (copy it word for word), else null. Do not invent scripts.
+Do not invent reels that are not in the plan. If a day has several reels, return each as its own item with the same day.
+Return JSON ONLY: { "items": [ { "day": 1, "date": null, "topic": "...", "format_id": null, "notes": "", "script_text": null } ] }`;
+  const o = await callGemini({ contents: asContents(prompt, parts), temperature: 0.1 });
+  return (Array.isArray(o.items) ? o.items : []).map((it) => ({
+    day: Number.isInteger(it.day) ? it.day : parseInt(it.day, 10) || null,
+    date: /^\d{4}-\d{2}-\d{2}$/.test(String(it.date || '')) ? String(it.date) : null,
+    topic: String(it.topic || '').trim().slice(0, 140),
+    formatId: formatById(it.format_id || it.formatId) ? (it.format_id || it.formatId) : null,
+    notes: String(it.notes || '').trim().slice(0, 600),
+    scriptText: it.script_text && String(it.script_text).trim().length >= 40 ? String(it.script_text).trim() : null,
+  })).filter((it) => it.topic);
 }

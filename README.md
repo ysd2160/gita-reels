@@ -41,3 +41,12 @@ Audio, AI images, uploads and music of a video stay until you **approve** it (so
 - A failed generation is retried twice automatically; a failed upload is retried every 10 min (max 5).
 - Calendar shows days that were planned but never generated as "Missed".
 - Server: set `DASHBOARD_USER` / `DASHBOARD_PASS` (basic-auth) and `PUBLIC_URL`. See `AWS-DEPLOY.md` for the full EC2 guide.
+
+## Script engine v5 (30-60 sec reels, many formats, no repeated shloks)
+- **9 reel formats** (`server/formats.js`): Dard→Gita→Shlok, Shlok Decode, Kahani→Shlok (these 3 chant a shlok) and Arjun-Krishna sawaal-jawab, Kahani, Raaz/Anjaani baat, Deep baat (3 sacchaiyan), Myth vs Gita, Aaj ka challenge (**no shlok, no chant**). A format is chosen automatically (never the same one twice in a day, recent ones are avoided) or picked by you per video.
+- **Length 30-60 sec**: Settings -> *Reel ki length* (Auto = random 34-56 s, or 30/45/60) and per video in Plan / Script Studio. The writer gets an exact word budget (~2.4 words/sec; a chanted shlok adds ~12 s, so shlok reels start at 40 s). The dashboard shows the estimated length of every script and turns red outside 30-60 s.
+- **No repeated shlok**: verse bank grew from 12 to 34. Recently used verses (also the scripts already written for the coming days) are excluded, so the same shlok comes back only after ~25 reels.
+- **Share of shlok reels**: Settings -> *Kitni % reels mein shlok ho* (default 45%).
+- **Better scripts**: draft -> editor polish -> automatic quality check (word count, banned generic phrases, weak/repeated hook, last line open loop) with one repair pass. Optional `GEMINI_SCRIPT_MODEL` in `.env` uses a stronger model for scripts only.
+- **Week plan** (Plan page): upload a PDF / photo / txt or paste text -> AI reads it, puts every reel in the right day (topic, format, your notes; a full script in your plan is used word for word) and writes the scripts in the background. Or press *AI se poora week plan banao* (optionally with an instruction like "is hafte anger aur karma par").
+- Shloks added in v5 (2.13, 2.20, 2.23, 2.27, 2.40, 2.48, 2.50, 2.62, 2.66, 2.71, 3.8, 3.21, 3.35, 3.37, 4.11, 4.38, 6.6, 6.17, 6.26, 9.26, 16.21, 18.78): please compare the Sanskrit once with a Gita Press edition before publishing.

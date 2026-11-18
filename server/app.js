@@ -6,13 +6,15 @@ import { config } from './config.js';
 import { Plan, Reel, Topic } from './models.js';
 import { enqueue, enqueueRender, queueLength } from './services/queue.js';
 import { bulkCreate, createReel, refillTopics } from './services/batch.js';
-import { chatAssistant, ensureVoiceText, generateLongScript, generateScript, romanToSpeak, scriptFromText, toApiShape, validateScript } from './services/gemini.js';
+import { chatAssistant, generateLongScript, romanToSpeak, scriptFromText, toApiShape, validateScript } from './services/gemini.js';
+import { writeShortScript } from './services/scriptContext.js';
+import { FORMATS } from './formats.js';
 import { VERSES } from './verses.js';
 import { batchProviders, setVoiceOverrides, speakBatch, lastTtsError } from './services/tts.js';
 import { toWav } from './services/audio.js';
 import { ART_STYLES, buildPrompt, generateImage, imageProvidersAvailable } from './services/images.js';
 import { getSettings, saveSettings } from './services/settings.js';
-import { ensurePlan, isScriptBusy, newTopicFor, prewriteScripts, runDay, runPlanItem, todayIST } from './services/planner.js';
+import { ensurePlan, importWeekPlan, isScriptBusy, newTopicFor, planWeekWithAI, prewriteScripts, runDay, runPlanItem, todayIST } from './services/planner.js';
 import { approveReel } from './services/reelActions.js';
 import { integrationStatus, publishReel } from './services/publisher.js';
 import { youtubeAuthUrl, youtubeConfigured, youtubeExchange } from './uploaders/youtube.js';
@@ -34,7 +36,7 @@ export function createApp() {
     });
   }
   app.get('/healthz', (_req, res) => res.send('ok'));
-  app.use(express.json({ limit: '5mb' }));
+  app.use(express.json({ limit: '30mb' })); // plan PDFs arrive as base64
   app.use('/media', express.static(config.paths.storage));
   app.use('/assets', express.static(config.paths.assets));
   app.use(express.static(config.paths.public));
@@ -56,6 +58,7 @@ export function createApp() {
     res.json(s);
   }));
   app.get('/api/verses', (_req, res) => res.json(VERSES.map(({ id, ref, themes }) => ({ id, ref, themes }))));
+  app.get('/api/formats', (_req, res) => res.json(FORMATS.map(({ id, label, shlok, desc }) => ({ id, label, shlok, desc }))));
   app.get('/api/art-styles', (_req, res) => res.json(ART_STYLES.map(({ id, template }) => ({ id, template }))));
 
   app.get('/oauth/youtube', (req, res) => {
@@ -186,7 +189,7 @@ export function createApp() {
   }));
   app.put('/api/plan/:id', wrap(async (req, res) => {
     const patch = {};
-    for (const k of ['topic', 'publishTime', 'status']) if (req.body[k] !== undefined) patch[k] = req.body[k];
+    for (const k of ['topic', 'publishTime', 'status', 'formatId', 'targetSec', 'notes']) if (req.body[k] !== undefined) patch[k] = req.body[k];
     if (req.body.script !== undefined) { // reviewed / edited script saved from the Script Studio
       const it = await Plan.findById(req.params.id);
       patch.script = req.body.script === null ? null : it.kind === 'long' ? req.body.script : validateScript(toApiShape(req.body.script));
@@ -197,9 +200,15 @@ export function createApp() {
   // generate a script for a planned item (reviewed in the Script Studio before the video is made)
   app.post('/api/plan/:id/script', wrap(async (req, res) => {
     const item = await Plan.findById(req.params.id);
-    const recent = (await Reel.find({ format: item.kind }).sort({ createdAt: -1 }).limit(15).select('script')).map((r) => r.script?.hookText || r.script?.title).filter(Boolean);
-    const script = item.kind === 'long' ? await generateLongScript(item.topic, recent) : await generateScript(item.topic, recent);
-    res.json(await Plan.findByIdAndUpdate(item._id, { script }, { new: true }));
+    if (!item) return res.status(404).json({ error: 'not found' });
+    const formatId = req.body?.formatId || item.formatId; // "Regenerate" can switch the format
+    const targetSec = req.body?.targetSec || item.targetSec;
+    let script;
+    if (item.kind === 'long') {
+      const recent = (await Reel.find({ format: 'long' }).sort({ createdAt: -1 }).limit(15).select('script')).map((r) => r.script?.hookText || r.script?.title).filter(Boolean);
+      script = await generateLongScript(item.topic, recent);
+    } else script = await writeShortScript({ topic: item.topic, formatId, targetSec, notes: item.notes, excludePlanId: item._id });
+    res.json(await Plan.findByIdAndUpdate(item._id, { script, ...(script.formatId ? { formatId: script.formatId } : {}) }, { new: true }));
   }));
   app.post('/api/plan/:id/script-from-text', wrap(async (req, res) => {
     const item = await Plan.findById(req.params.id);
@@ -246,6 +255,19 @@ export function createApp() {
   app.post('/api/plan/reset', wrap(async (_req, res) => {
     await Plan.deleteMany({ date: { $gte: todayIST() }, status: 'planned' });
     res.json({ created: await ensurePlan() });
+  }));
+  // AI plans the whole week (mixed formats) and writes all the scripts in the background. Optional brief = "is hafte karma aur anger par".
+  app.post('/api/plan/week/ai', wrap(async (req, res) => res.json(await planWeekWithAI({ brief: String(req.body?.brief || '').slice(0, 1500) }))));
+  // Weekly plan from a PDF / image / text: { text?, file?: { name, mime, data(base64) }, startDate?, brief? }
+  app.post('/api/plan/week/import', wrap(async (req, res) => {
+    const { text = '', file = null, startDate, brief = '' } = req.body || {};
+    if (!String(text).trim() && !file?.data) return res.status(400).json({ error: 'Plan ka text paste karo ya PDF/image/txt file chuno' });
+    const mime = file ? String(file.mime || '').toLowerCase() : '';
+    if (file && !['application/pdf', 'image/png', 'image/jpeg', 'image/webp', 'text/plain', 'text/markdown', 'text/csv'].includes(mime)) return res.status(400).json({ error: 'Sirf PDF, image (png/jpg/webp) ya txt file chalegi. Word/Excel ho to text copy karke paste karo.' });
+    const start = /^\d{4}-\d{2}-\d{2}$/.test(String(startDate || '')) ? startDate : todayIST();
+    // plain text files are sent as text (cheaper, exact)
+    const asText = file && mime.startsWith('text/') ? Buffer.from(file.data, 'base64').toString('utf8') : '';
+    res.json(await importWeekPlan({ text: [text, asText].filter(Boolean).join('\n\n'), file: file && !asText ? { mime, data: file.data } : null, startDate: start, brief: String(brief).slice(0, 1500) }));
   }));
 
   return app;

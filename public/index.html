@@ -1,595 +1,379 @@
 <!doctype html>
-<html lang="en">
+<html lang="hi">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Gita Reels Studio</title>
 <style>
-  :root {
-    --bg:#0d0f14; --s1:#141720; --s2:#1a1e29; --line:#252a37; --line2:#303646;
-    --text:#e8eaf0; --mute:#8b93a7; --dim:#5d6577; --accent:#e5b04b; --accent-ink:#1b1400;
-    --green:#4cc38a; --red:#ef6a6a; --blue:#6aa8ef; --r:10px;
-    font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  }
-  * { box-sizing:border-box; }
-  html,body { height:100%; } body { margin:0; background:var(--bg); color:var(--text); font-size:14px; line-height:1.45; -webkit-font-smoothing:antialiased; }
-  button,input,textarea,select { font:inherit; color:inherit; }
-  svg { width:16px; height:16px; stroke:currentColor; fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; flex:none; }
-
-  .shell { display:grid; grid-template-columns:232px minmax(0,1fr) 0; height:100vh; transition:grid-template-columns .2s; }
-  .shell.chat-on { grid-template-columns:232px minmax(0,1fr) 400px; }
-
-  /* sidebar */
-  .side { border-right:1px solid var(--line); padding:20px 14px; display:flex; flex-direction:column; gap:22px; background:var(--s1); }
-  .brand { display:flex; align-items:center; gap:10px; padding:0 8px; font-weight:600; letter-spacing:.2px; }
-  .mark { width:28px; height:28px; border-radius:8px; background:var(--accent); color:var(--accent-ink); display:grid; place-items:center; font-weight:700; }
-  .nav { display:flex; flex-direction:column; gap:2px; }
-  .nav button { display:flex; align-items:center; gap:10px; padding:9px 10px; border:0; background:none; border-radius:8px; color:var(--mute); cursor:pointer; text-align:left; }
-  .nav button:hover { background:var(--s2); color:var(--text); } .nav button.on { background:var(--s2); color:var(--text); }
-  .stat { margin-top:auto; border:1px solid var(--line); border-radius:var(--r); padding:12px; display:flex; flex-direction:column; gap:8px; font-size:12.5px; }
-  .stat h4 { margin:0; font-size:11px; letter-spacing:.8px; text-transform:uppercase; color:var(--dim); font-weight:600; }
-  .stat div { display:flex; justify-content:space-between; gap:8px; color:var(--mute); } .stat b { color:var(--text); font-weight:500; text-align:right; }
-  .dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--green); margin-right:6px; } .dot.off { background:var(--dim); }
-
-  /* main */
-  .main { overflow:auto; min-width:0; }
-  .top { position:sticky; top:0; z-index:5; background:rgba(13,15,20,.92); backdrop-filter:blur(8px); border-bottom:1px solid var(--line); padding:18px 28px 14px; }
-  .top-row { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
-  h1 { margin:0; font-size:20px; font-weight:600; letter-spacing:-.2px; } .count { color:var(--mute); font-size:13px; margin-left:4px; }
-  .grow { flex:1; }
-  .composer { display:flex; gap:8px; margin-top:14px; max-width:720px; }
-  .composer input { flex:1; }
-  input,textarea,select { background:var(--s1); border:1px solid var(--line); border-radius:8px; padding:9px 12px; outline:none; }
-  input:focus,textarea:focus,select:focus { border-color:var(--line2); box-shadow:0 0 0 3px rgba(229,176,75,.12); }
-  ::placeholder { color:var(--dim); }
-  .btn { display:inline-flex; align-items:center; gap:7px; padding:8px 13px; border-radius:8px; border:1px solid var(--line2); background:var(--s2); cursor:pointer; font-weight:500; white-space:nowrap; }
-  .btn:hover { background:#222736; } .btn:disabled { opacity:.5; cursor:wait; }
-  .btn.primary { background:var(--accent); border-color:var(--accent); color:var(--accent-ink); font-weight:600; } .btn.primary:hover { filter:brightness(1.06); }
-  .btn.ok { background:rgba(76,195,138,.14); border-color:rgba(76,195,138,.4); color:var(--green); }
-  .btn.sm { padding:6px 9px; } .btn.icon { padding:7px; } .btn.bad:hover { color:var(--red); border-color:rgba(239,106,106,.5); }
-  .tabs { display:flex; gap:4px; margin-top:14px; }
-  .tab { padding:6px 12px; border-radius:999px; border:1px solid transparent; background:none; color:var(--mute); cursor:pointer; }
-  .tab:hover { color:var(--text); } .tab.on { background:var(--s2); border-color:var(--line); color:var(--text); }
-
-  .grid { padding:24px 28px 60px; display:grid; grid-template-columns:repeat(auto-fill,minmax(236px,1fr)); gap:20px; align-items:start; }
-  .card { background:var(--s1); border:1px solid var(--line); border-radius:14px; overflow:hidden; display:flex; flex-direction:column; }
-  .media { position:relative; aspect-ratio:9/16; background:#000; }
-  .media video { width:100%; height:100%; object-fit:cover; display:block; }
-  .pill { position:absolute; top:10px; left:10px; z-index:2; padding:3px 9px; border-radius:999px; font-size:11.5px; font-weight:600; background:rgba(13,15,20,.78); backdrop-filter:blur(6px); border:1px solid var(--line2); }
-  .pill.ready { color:var(--accent); } .pill.approved { color:var(--green); } .pill.failed,.pill.rejected { color:var(--red); }
-  .body { padding:12px 14px 14px; display:flex; flex-direction:column; gap:10px; }
-  .title { font-weight:600; font-size:14px; } .hook { color:var(--mute); font-size:13px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; min-height:36px; }
-  .actions { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
-  .meta { color:var(--dim); font-size:12px; display:flex; justify-content:space-between; }
-
-  .work { position:absolute; inset:0; display:flex; flex-direction:column; justify-content:center; gap:14px; padding:26px; background:linear-gradient(180deg,#12151d,#0b0d12); }
-  .step { display:flex; align-items:center; gap:10px; color:var(--dim); font-size:13px; } .step i { width:8px; height:8px; border-radius:50%; background:var(--line2); }
-  .step.done { color:var(--mute); } .step.done i { background:var(--green); } .step.now { color:var(--text); } .step.now i { background:var(--accent); box-shadow:0 0 0 4px rgba(229,176,75,.18); }
-  .bar { height:4px; background:var(--line); border-radius:4px; overflow:hidden; } .bar div { height:100%; background:var(--accent); transition:width .4s; }
-  .err { color:var(--red); font-size:12.5px; padding:20px; text-align:center; }
-  .empty { grid-column:1/-1; text-align:center; color:var(--mute); padding:80px 0; }
-
-  /* assistant */
-  .chat { border-left:1px solid var(--line); background:var(--s1); display:flex; flex-direction:column; min-height:0; overflow:hidden; }
-  .chat-h { display:flex; align-items:center; gap:10px; padding:16px 18px; border-bottom:1px solid var(--line); font-weight:600; }
-  .ctx { font-size:12px; padding:3px 10px; border-radius:999px; background:rgba(229,176,75,.12); color:var(--accent); cursor:pointer; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  #msgs { flex:1; min-height:0; overflow:auto; padding:18px; display:flex; flex-direction:column; gap:18px; }
-  .msg { display:flex; gap:10px; } .msg.user { justify-content:flex-end; }
-  .av { width:24px; height:24px; border-radius:7px; background:var(--accent); color:var(--accent-ink); display:grid; place-items:center; font-weight:700; font-size:12px; flex:none; margin-top:2px; }
-  .txt { white-space:pre-wrap; max-width:100%; } .msg.user .txt { background:var(--s2); border:1px solid var(--line); padding:9px 13px; border-radius:14px 14px 4px 14px; max-width:85%; }
-  .chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
-  .chip { border:1px solid var(--line2); background:var(--bg); border-radius:999px; padding:5px 11px; font-size:12.5px; color:var(--text); cursor:pointer; text-align:left; }
-  .chip:hover { border-color:var(--accent); }
-  .chat-f { border-top:1px solid var(--line); padding:12px; } .chat-f .box { display:flex; gap:8px; align-items:flex-end; }
-  .chat-f textarea { flex:1; resize:none; max-height:140px; min-height:42px; }
-  .typing { color:var(--dim); }
-
-  /* modal */
-  .modal { position:fixed; inset:0; background:rgba(5,6,9,.72); display:none; align-items:center; justify-content:center; z-index:50; padding:24px; }
-  .modal.on { display:flex; }
-  .sheet { background:var(--s1); border:1px solid var(--line2); border-radius:16px; width:min(1040px,100%); max-height:92vh; overflow:auto; }
-  .sheet.narrow { width:min(520px,100%); }
-  .sheet-h { display:flex; align-items:center; padding:16px 20px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--s1); z-index:2; }
-  .sheet-h h3 { margin:0; font-size:16px; font-weight:600; flex:1; } .sheet-b { padding:20px; } .sheet-f { padding:14px 20px; border-top:1px solid var(--line); display:flex; justify-content:flex-end; gap:8px; position:sticky; bottom:0; background:var(--s1); }
-  .edit { display:grid; grid-template-columns:240px 1fr; gap:24px; } .edit video { width:100%; aspect-ratio:9/16; border-radius:12px; background:#000; position:sticky; top:70px; }
-  .f { display:flex; flex-direction:column; gap:5px; margin-bottom:14px; } .f label { font-size:12px; color:var(--mute); font-weight:500; }
-  .two { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-  .ln { border:1px solid var(--line); border-radius:12px; padding:12px; margin-bottom:10px; background:var(--bg); }
-  .ln-h { display:flex; align-items:center; gap:8px; margin-bottom:8px; color:var(--mute); font-size:12px; font-weight:600; }
-  .ln textarea { width:100%; min-height:40px; resize:vertical; } .ln input { width:100%; }
-  .help { color:var(--dim); font-size:12px; margin-top:6px; }
-  .tag { font-size:11.5px; color:var(--accent); }
-  .card.long { grid-column:span 2; } .media.long { aspect-ratio:16/9; }
-  .fmt { font-size:10.5px; letter-spacing:.6px; font-weight:700; color:var(--blue); margin-left:6px; }
-  .pub { display:flex; gap:6px; flex-wrap:wrap; } .chipx { font-size:11.5px; padding:2px 8px; border-radius:999px; border:1px solid var(--line2); color:var(--mute); } .chipx.ok { color:var(--green); border-color:rgba(76,195,138,.4); } .chipx.bad { color:var(--red); border-color:rgba(239,106,106,.4); }
-  .page { padding:24px 28px 60px; max-width:980px; } .page h2 { margin:0 0 4px; font-size:20px; } .sub { color:var(--mute); margin:0 0 20px; }
-  .day { margin-bottom:22px; } .day h3 { margin:0 0 8px; font-size:13px; letter-spacing:.6px; text-transform:uppercase; color:var(--dim); font-weight:600; }
-  .prow { display:grid; grid-template-columns:70px 1fr 96px 110px auto; gap:10px; align-items:center; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:var(--s1); margin-bottom:6px; }
-  .kind { font-size:11px; font-weight:700; letter-spacing:.6px; padding:3px 8px; border-radius:6px; text-align:center; background:var(--s2); color:var(--mute); } .kind.long { color:var(--blue); }
-  .prow input { width:100%; } .pst { font-size:12.5px; color:var(--mute); } .pst.generating { color:var(--accent); } .pst.done { color:var(--green); } .pst.skipped { color:var(--dim); text-decoration:line-through; }
-  .form { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px 18px; } .form .f { margin:0; } .tgl { display:flex; align-items:center; gap:10px; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:var(--s1); }
-  .tgl input { width:auto; } .box { border:1px solid var(--line); border-radius:12px; padding:16px; background:var(--s1); margin-bottom:16px; } .box h4 { margin:0 0 10px; font-size:13px; }
-  @media (max-width:1100px) { .shell, .shell.chat-on { grid-template-columns:0 minmax(0,1fr) 0; } .side { display:none; } .shell.chat-on .chat { position:fixed; right:0; top:0; bottom:0; width:min(420px,100%); z-index:30; } .edit { grid-template-columns:1fr; } .edit video { position:static; max-width:240px; } }
-  /* home + calendar */
-  .hcard { border:1px solid var(--line); border-radius:12px; background:var(--s1); padding:16px; margin-bottom:14px; }
-  .hcard-h { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px; } .hcard-h h3 { margin:0; font-size:16px; flex:1; min-width:180px; }
-  .chip2 { font-size:11.5px; padding:3px 9px; border-radius:99px; background:var(--s2); color:var(--mute); border:1px solid var(--line); white-space:nowrap; }
-  .chip2.live { color:var(--green); border-color:rgba(76,195,138,.4); background:rgba(76,195,138,.1); } .chip2.work { color:var(--accent); border-color:rgba(229,176,75,.4); background:rgba(229,176,75,.1); } .chip2.err { color:var(--red); border-color:rgba(239,106,106,.4); }
-  .hook { font-weight:600; color:var(--accent); margin:8px 0 4px; } .slines { margin:6px 0 8px 18px; padding:0; color:var(--text); line-height:1.55; } .slines li { margin:2px 0; }
-  .hcard details summary { cursor:pointer; color:var(--mute); font-size:12.5px; margin:6px 0; } .hcard .cap { color:var(--mute); font-size:12.5px; white-space:pre-wrap; }
-  .bar { height:6px; background:var(--s2); border-radius:99px; overflow:hidden; margin:8px 0; } .bar i { display:block; height:100%; background:var(--accent); }
-  .hact { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; align-items:center; } .hnote { color:var(--dim); font-size:12px; margin-top:14px; }
-  .calh { display:flex; align-items:center; gap:10px; margin-bottom:12px; } .calh h3 { margin:0; font-size:17px; min-width:160px; text-align:center; }
-  .calsum { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px; }
-  .cal { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:6px; } .cal .dow { text-align:center; font-size:11px; color:var(--dim); letter-spacing:.6px; padding:2px 0; text-transform:uppercase; }
-  .cell { min-height:98px; border:1px solid var(--line); border-radius:10px; padding:6px; background:var(--s1); cursor:pointer; overflow:hidden; } .cell:hover { border-color:var(--line2); } .cell.empty { background:transparent; border-color:transparent; cursor:default; }
-  .cell.today { border-color:var(--accent); } .cell.sel { background:var(--s2); border-color:var(--accent); } .cell .dn { font-size:12px; color:var(--mute); margin-bottom:4px; } .cell.today .dn { color:var(--accent); font-weight:700; }
-  .ce { font-size:10.5px; line-height:1.25; padding:2px 5px; border-radius:5px; margin-bottom:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; background:var(--s2); color:var(--mute); }
-  .ce.pub { background:rgba(76,195,138,.16); color:var(--green); } .ce.sch { background:rgba(106,168,239,.16); color:var(--blue); } .ce.gen { background:rgba(229,176,75,.16); color:var(--accent); } .ce.bad { background:rgba(239,106,106,.16); color:var(--red); } .ce.skip { text-decoration:line-through; }
-  .more { font-size:10.5px; color:var(--dim); } .dlist { margin-top:16px; } .drow { display:flex; gap:12px; align-items:center; flex-wrap:wrap; padding:10px 0; border-top:1px solid var(--line); } .drow b { flex:1; min-width:160px; }
-  @media (max-width:700px) { .cell { min-height:64px; padding:4px; } .ce { font-size:9.5px; } }
+:root{--bg:#0b0c10;--s1:#12141b;--s2:#191c26;--s3:#222634;--line:#262a38;--text:#eceef4;--mute:#9097ab;--dim:#5f6678;--gold:#f0b44c;--gold-ink:#1a1200;--ai:#9b8cff;--ai-bg:rgba(155,140,255,.12);--green:#4cc38a;--red:#ef6a6a;--blue:#6aa8ef;--r:14px;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+*{box-sizing:border-box}html,body{height:100%}body{margin:0;background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.app{display:grid;grid-template-columns:76px minmax(0,1fr) 0;height:100vh;transition:grid-template-columns .22s}
+.app.ai-on{grid-template-columns:76px minmax(0,1fr) 400px}
+/* nav */
+.nav{background:var(--s1);border-right:1px solid var(--line);display:flex;flex-direction:column;align-items:center;padding:16px 0;gap:6px}
+.logo{width:40px;height:40px;border-radius:12px;background:var(--gold);color:var(--gold-ink);display:grid;place-items:center;font-weight:800;font-size:19px;margin-bottom:14px}
+.nb{width:60px;border:0;background:none;color:var(--mute);display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 0;border-radius:12px;cursor:pointer;font-size:11px}
+.nb:hover{background:var(--s2);color:var(--text)}.nb.on{background:var(--s2);color:var(--gold)}
+.nb.ai{color:var(--ai);margin-top:auto}.nb.ai.on{background:var(--ai-bg)}
+.dotst{width:8px;height:8px;border-radius:50%;background:var(--dim);margin:8px 0 0}.dotst.ok{background:var(--green)}
+/* main */
+.main{overflow:auto;min-width:0}
+.wrap{max-width:1000px;margin:0 auto;padding:28px 32px 90px}
+.hd{display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:20px}
+.hd h1{margin:0;font-size:26px;letter-spacing:-.4px}.hd .sub{color:var(--mute);margin-top:2px}.grow{flex:1}
+.btn{display:inline-flex;align-items:center;gap:7px;padding:9px 15px;border-radius:10px;border:1px solid var(--line);background:var(--s2);cursor:pointer;font-weight:500;white-space:nowrap;text-decoration:none;color:var(--text)}
+.btn:hover{background:var(--s3)}.btn:disabled{opacity:.45;cursor:default}
+.btn.gold{background:var(--gold);border-color:var(--gold);color:var(--gold-ink);font-weight:700}.btn.gold:hover{filter:brightness(1.07)}
+.btn.ai{background:var(--ai-bg);border-color:rgba(155,140,255,.4);color:var(--ai)}.btn.ai:hover{background:rgba(155,140,255,.2)}
+.btn.green{background:rgba(76,195,138,.14);border-color:rgba(76,195,138,.45);color:var(--green)}
+.btn.sm{padding:6px 11px;font-size:13px}.btn.red{color:var(--red)}
+input,textarea,select{background:var(--s1);border:1px solid var(--line);border-radius:10px;padding:9px 12px;outline:none;width:100%}
+input:focus,textarea:focus,select:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(240,180,76,.12)}
+textarea{resize:vertical}
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:12px;padding:3px 10px;border-radius:99px;background:var(--s2);color:var(--mute);border:1px solid var(--line);white-space:nowrap}
+.chip.g{color:var(--green);border-color:rgba(76,195,138,.4);background:rgba(76,195,138,.08)}.chip.y{color:var(--gold);border-color:rgba(240,180,76,.4);background:rgba(240,180,76,.08)}.chip.r{color:var(--red);border-color:rgba(239,106,106,.4)}.chip.p{color:var(--ai);border-color:rgba(155,140,255,.4);background:var(--ai-bg)}
+/* command bar */
+.cmd{display:flex;gap:10px;align-items:center;background:var(--s1);border:1px solid rgba(155,140,255,.35);border-radius:16px;padding:8px 8px 8px 16px;margin-bottom:22px;box-shadow:0 0 0 4px rgba(155,140,255,.05)}
+.cmd input{border:0;background:none;box-shadow:none!important;padding:8px 0;font-size:15px}
+.cmd .spark{color:var(--ai)}
+.sugs{display:flex;gap:8px;flex-wrap:wrap;margin:-10px 0 22px}
+.sg{border:1px dashed var(--line);background:none;color:var(--mute);border-radius:99px;padding:5px 12px;font-size:12.5px;cursor:pointer}.sg:hover{color:var(--ai);border-color:var(--ai)}
+/* progress */
+.prog{display:flex;gap:10px;margin-bottom:22px}
+.pstep{flex:1;background:var(--s1);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.pstep b{display:block;font-size:22px;letter-spacing:-.5px}.pstep span{color:var(--mute);font-size:12px}
+/* video row card */
+.vc{display:grid;grid-template-columns:132px minmax(0,1fr);gap:18px;background:var(--s1);border:1px solid var(--line);border-radius:18px;padding:14px;margin-bottom:14px}
+.ph{width:132px;aspect-ratio:9/16;border-radius:12px;background:#000;overflow:hidden;position:relative;display:grid;place-items:center}
+.ph video{width:100%;height:100%;object-fit:cover}
+.ph .ring{display:grid;place-items:center;text-align:center;color:var(--mute);font-size:12px;padding:8px;gap:6px}
+.ph .num{font-size:26px;font-weight:700;color:var(--gold)}
+.ph.empty{background:linear-gradient(160deg,#1b1e2b,#0f1118);border:1px dashed var(--line)}
+.vb{min-width:0;display:flex;flex-direction:column;gap:9px}
+.vt{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.vh{font-size:19px;font-weight:700;letter-spacing:-.3px;line-height:1.3}
+.vtopic{color:var(--mute);font-size:13px}
+.vs{color:var(--mute);font-size:14px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.bar{height:6px;background:var(--s3);border-radius:99px;overflow:hidden}.bar i{display:block;height:100%;background:var(--gold);transition:width .5s}
+.va{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:auto}
+.more{position:relative}.more summary{list-style:none;cursor:pointer}.more summary::-webkit-details-marker{display:none}
+.menu{position:absolute;right:0;bottom:calc(100% + 6px);background:var(--s2);border:1px solid var(--line);border-radius:12px;padding:6px;min-width:200px;z-index:20;box-shadow:0 12px 30px rgba(0,0,0,.5);display:flex;flex-direction:column}
+.menu button,.menu a{text-align:left;background:none;border:0;padding:8px 10px;border-radius:8px;cursor:pointer;color:var(--text);text-decoration:none;font-size:13.5px}.menu button:hover,.menu a:hover{background:var(--s3)}
+.err{color:var(--red);font-size:12.5px}
+/* grid */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:16px}
+.gc{background:var(--s1);border:1px solid var(--line);border-radius:16px;overflow:hidden;display:flex;flex-direction:column}
+.gc .m{aspect-ratio:9/16;background:#000;position:relative;display:grid;place-items:center}.gc video{width:100%;height:100%;object-fit:cover}
+.gc .b{padding:12px;display:flex;flex-direction:column;gap:8px}.gc .t{font-weight:600;font-size:13.5px}
+.tabs{display:flex;gap:6px;margin-bottom:18px}.tab{border:1px solid transparent;background:none;color:var(--mute);padding:7px 14px;border-radius:99px;cursor:pointer}.tab.on{background:var(--s2);border-color:var(--line);color:var(--text)}
+/* plan */
+.day{margin-bottom:24px}.day h3{font-size:12px;letter-spacing:.8px;text-transform:uppercase;color:var(--dim);margin:0 0 8px}
+.pr{display:grid;grid-template-columns:60px minmax(0,1fr) 150px 96px 100px auto;gap:8px;align-items:center;background:var(--s1);border:1px solid var(--line);border-radius:12px;padding:8px 10px;margin-bottom:6px}
+.box{background:var(--s1);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px}.box h4{margin:0 0 12px}
+.form{display:grid;grid-template-columns:1fr 1fr;gap:12px 16px}.f label{display:block;font-size:12px;color:var(--mute);margin-bottom:4px}
+.tg{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}.tg input{width:auto;margin-top:3px}
+.help{color:var(--dim);font-size:12px}
+details.imp summary{cursor:pointer;color:var(--mute);padding:6px 0}
+/* calendar */
+.cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}.dow{font-size:11px;color:var(--dim);text-align:center;text-transform:uppercase}
+.cell{min-height:88px;border:1px solid var(--line);border-radius:10px;padding:6px;background:var(--s1);cursor:pointer;overflow:hidden}.cell.e{background:none;border-color:transparent;cursor:default}.cell.today{border-color:var(--gold)}.cell.sel{background:var(--s2)}
+.cell .d{font-size:12px;color:var(--mute);margin-bottom:3px}.ce{font-size:10.5px;padding:1px 5px;border-radius:5px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:var(--s3);color:var(--mute)}
+.ce.pub{color:var(--green)}.ce.sch{color:var(--blue)}.ce.gen{color:var(--gold)}.ce.bad{color:var(--red)}
+.drow{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 0;border-top:1px solid var(--line)}
+/* AI dock */
+.dock{background:var(--s1);border-left:1px solid var(--line);display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.dh{padding:16px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;font-weight:700}
+.dh .ctx{font-size:12px;font-weight:500;color:var(--ai);background:var(--ai-bg);border-radius:99px;padding:3px 10px;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
+#msgs{flex:1;overflow:auto;padding:18px;display:flex;flex-direction:column;gap:16px;min-height:0}
+.m{display:flex;gap:10px}.m.u{justify-content:flex-end}.av{width:26px;height:26px;border-radius:8px;background:var(--ai-bg);color:var(--ai);display:grid;place-items:center;flex:none;font-size:13px}
+.tx{white-space:pre-wrap}.m.u .tx{background:var(--s2);border:1px solid var(--line);padding:9px 13px;border-radius:14px 14px 4px 14px;max-width:85%}
+.qa{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.df{border-top:1px solid var(--line);padding:12px}.df .qa{margin:0 0 10px}.df .row{display:flex;gap:8px;align-items:flex-end}.df textarea{min-height:44px;max-height:130px}
+/* drawer (script studio) */
+.ov{position:fixed;inset:0;background:rgba(4,5,8,.7);display:none;z-index:50;justify-content:flex-end}.ov.on{display:flex}
+.dr{width:min(760px,100%);background:var(--s1);border-left:1px solid var(--line);display:flex;flex-direction:column;height:100%}
+.dr .hh{padding:16px 22px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}.dr .hh h3{margin:0;flex:1;font-size:17px}
+.dr .bb{flex:1;overflow:auto;padding:20px 22px}.dr .ff{padding:14px 22px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end;align-items:center}
+.ln{display:grid;grid-template-columns:26px 1fr;gap:8px;margin-bottom:8px;align-items:start}.ln .n{color:var(--dim);font-size:12px;padding-top:11px;text-align:right}.ln.chant textarea{border-color:rgba(240,180,76,.5)}
+.aiq{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 14px}
+#toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);display:flex;flex-direction:column;gap:8px;z-index:99;align-items:center}
+.ts{background:var(--s3);border:1px solid var(--line);padding:10px 16px;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
+.empty{text-align:center;color:var(--mute);padding:60px 0;border:1px dashed var(--line);border-radius:16px}
+@media(max-width:1100px){.app,.app.ai-on{grid-template-columns:0 minmax(0,1fr) 0}.nav{position:fixed;bottom:0;left:0;right:0;height:62px;flex-direction:row;justify-content:space-around;padding:0;z-index:40;border-top:1px solid var(--line);border-right:0}.logo,.dotst{display:none}.nb{width:auto;flex:1;padding:8px 0}.nb.ai{margin:0}.app.ai-on .dock{position:fixed;right:0;top:0;bottom:62px;width:min(420px,100%);z-index:45}.wrap{padding:20px 16px 90px}.vc{grid-template-columns:96px 1fr}.ph{width:96px}.pr{grid-template-columns:1fr 1fr}.form{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
-<div class="shell" id="shell">
-  <aside class="side">
-    <div class="brand"><div class="mark">ॐ</div><div>Gita Reels<br><span style="color:var(--dim);font-weight:400;font-size:12px">Studio</span></div></div>
-    <nav class="nav" id="nav">
-      <button data-v="home" class="on" onclick="setView('home')"><svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7M5 10v10h14V10"/></svg>Home</button>
-      <button data-v="reels" onclick="setView('reels')"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="7" height="16" rx="2"/><rect x="14" y="4" width="7" height="16" rx="2"/></svg>Reels</button>
-      <button data-v="plan" onclick="setView('plan')"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>Plan</button>
-      <button data-v="calendar" onclick="setView('calendar')"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M8 14h2M12 14h2M16 14h2M8 17h2M12 17h2"/></svg>Calendar</button>
-      <button data-v="settings" onclick="setView('settings')"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg>Settings</button>
-      <button onclick="toggleChat()"><svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>Assistant</button>
-    </nav>
-    <div class="stat" id="stat"></div>
-  </aside>
+<div class="app" id="app">
+  <nav class="nav">
+    <div class="logo">ॐ</div>
+    <button class="nb on" data-v="today" onclick="go('today')"><svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7M5 10v10h14V10"/></svg>Aaj</button>
+    <button class="nb" data-v="videos" onclick="go('videos')"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="7" height="16" rx="2"/><rect x="14" y="4" width="7" height="16" rx="2"/></svg>Videos</button>
+    <button class="nb" data-v="plan" onclick="go('plan')"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Plan</button>
+    <button class="nb" data-v="settings" onclick="go('settings')"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg>Settings</button>
+    <button class="nb ai" id="aiBtn" onclick="toggleAI()"><svg viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM18 16l.8 2.2L21 19l-2.2.8L18 22l-.8-2.2L15 19l2.2-.8z"/></svg>AI</button>
+    <div class="dotst" id="dot" title="Engine"></div>
+  </nav>
 
   <main class="main">
-    <div id="v-home"><div class="page">
-      <div class="top-row"><div><h2>Aaj ka plan</h2><p class="sub" id="homeSub"></p></div><div class="grow"></div>
-        <button class="btn" id="homeScripts" onclick="homeScripts()">Write scripts</button>
-        <button class="btn primary" id="homeGenAll" onclick="homeGenAll()">Generate all</button></div>
-      <div id="homeBody"></div></div></div>
+    <section id="v-today" class="wrap">
+      <div class="hd"><div><h1 id="tTitle">Aaj</h1><div class="sub" id="tSub"></div></div><div class="grow"></div>
+        <button class="btn ai" id="tScripts" onclick="writeScripts()">✨ Saari scripts likho</button>
+        <button class="btn gold" id="tGen" onclick="genAll()">Sab videos banao</button></div>
+      <div class="cmd"><span class="spark">✨</span><input id="cmd" placeholder="AI se kuch bhi bolo: &quot;aaj ke liye 3 naye topic do&quot;, &quot;breakup pe reel ka script likho&quot;…" onkeydown="if(event.key==='Enter')cmdSend()"><button class="btn ai" onclick="cmdSend()">Bhejo</button></div>
+      <div class="sugs" id="sugs"></div>
+      <div class="prog" id="prog"></div>
+      <div id="tList"></div>
+      <div class="help" id="tNote" style="margin-top:14px"></div>
+    </section>
 
-    <div id="v-calendar" style="display:none"><div class="page">
-      <div class="calh"><button class="btn sm" onclick="calGo(-1)">&lsaquo;</button><h3 id="calTitle"></h3><button class="btn sm" onclick="calGo(1)">&rsaquo;</button><button class="btn sm" onclick="calGo(0)">Today</button></div>
-      <div class="calsum" id="calSum"></div>
-      <div class="cal" id="calGrid"></div>
-      <div class="dlist" id="calDetail"></div></div></div>
+    <section id="v-videos" class="wrap" style="display:none">
+      <div class="hd"><div><h1>Videos</h1><div class="sub" id="vSub"></div></div><div class="grow"></div>
+        <input id="newTopic" style="width:260px" placeholder="Naya topic…" onkeydown="if(event.key==='Enter')newReel()"><button class="btn gold" onclick="newReel()">Banao</button></div>
+      <div class="tabs" id="vTabs"></div><div class="grid" id="vGrid"></div>
+    </section>
 
-    <div id="v-reels" style="display:none">
-    <div class="top">
-      <div class="top-row">
-        <h1>Reels<span class="count" id="count"></span></h1><div class="grow"></div>
-        <button class="btn" onclick="openBulk()"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Bulk create</button>
-        <button class="btn" onclick="toggleChat()"><svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>Assistant</button>
-      </div>
-      <div class="composer">
-        <input id="topic" placeholder="Topic, e.g. Overthinking at 3 AM" onkeydown="if(event.key==='Enter')makeReel()" />
-        <select id="fmt" style="width:150px"><option value="short">Short (vertical)</option><option value="long">Long (~5 min)</option></select>
-        <button class="btn primary" onclick="makeReel()">Generate</button>
-      </div>
-      <div class="tabs" id="tabs"></div>
-    </div>
-    <div class="grid" id="grid"></div>
-    </div>
+    <section id="v-plan" class="wrap" style="display:none">
+      <div class="hd"><div><h1>Plan</h1><div class="sub" id="pSub"></div></div><div class="grow"></div>
+        <div class="tabs" style="margin:0"><button class="tab on" id="pt-list" onclick="planTab('list')">List</button><button class="tab" id="pt-cal" onclick="planTab('cal')">Calendar</button></div></div>
+      <div id="p-list">
+        <div class="box"><details class="imp"><summary><b>✨ AI se week plan banao ya PDF / text se import karo</b></summary>
+          <div class="f" style="margin-top:12px"><label>Instruction (optional)</label><input id="wkBrief" placeholder="e.g. is hafte anger aur karma par, 2 reels bina shlok ke"></div>
+          <div class="f" style="margin-top:10px"><label>Apna plan paste karo</label><textarea id="wkText" rows="4"></textarea></div>
+          <div class="form" style="margin-top:10px"><div class="f"><label>PDF / photo / txt</label><input type="file" id="wkFile"></div><div class="f"><label>Shuru kis din se</label><input type="date" id="wkStart"></div></div>
+          <div style="display:flex;gap:8px;margin-top:12px;align-items:center;flex-wrap:wrap"><button class="btn ai" id="wkAI" onclick="weekAI()">✨ AI se poora week</button><button class="btn" id="wkImp" onclick="weekImport()">Import karo</button><span class="help" id="wkMsg"></span></div></details></div>
+        <div id="pBody"></div></div>
+      <div id="p-cal" style="display:none"><div style="display:flex;gap:8px;align-items:center;margin-bottom:12px"><button class="btn sm" onclick="calGo(-1)">‹</button><b id="calT" style="min-width:150px;text-align:center"></b><button class="btn sm" onclick="calGo(1)">›</button><button class="btn sm" onclick="calGo(0)">Aaj</button></div>
+        <div class="cal" id="calG"></div><div id="calD" style="margin-top:16px"></div></div>
+    </section>
 
-    <div id="v-plan" style="display:none"><div class="page">
-      <div class="top-row"><div><h2>Content plan</h2><p class="sub" id="planSub"></p></div><div class="grow"></div>
-        <button class="btn" onclick="planReset()">Re-plan upcoming days</button><button class="btn primary" onclick="planRunToday()">Generate today's videos now</button></div>
-      <div id="planBody"></div></div></div>
-
-    <div id="v-settings" style="display:none"><div class="page">
-      <h2>Settings</h2><p class="sub">Daily automation, publishing and connections.</p>
-      <div id="setBody"></div></div></div>
+    <section id="v-settings" class="wrap" style="display:none"><div class="hd"><div><h1>Settings</h1><div class="sub">Automation, publishing, voice</div></div></div><div id="setBody"></div></section>
   </main>
 
-  <aside class="chat">
-    <div class="chat-h">Assistant <span class="ctx" id="ctx" style="display:none" onclick="setCtx(null)"></span><div class="grow"></div>
-      <button class="btn icon sm" title="Clear chat" onclick="clearChat()"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>
-      <button class="btn icon sm" title="Close" onclick="toggleChat()"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <aside class="dock">
+    <div class="dh">✨ AI Co-pilot <span class="ctx" id="ctx" style="display:none" onclick="setCtx(null)"></span><div class="grow"></div>
+      <button class="btn sm" onclick="clearChat()">Clear</button><button class="btn sm" onclick="toggleAI()">✕</button></div>
     <div id="msgs"></div>
-    <div class="chat-f">
-      <div class="chips" id="sugg" style="margin:0 0 10px"></div>
-      <div class="box"><textarea id="input" rows="1" placeholder="Ask for topics, hooks, captions, or edit the selected reel..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();send()}"></textarea>
-        <button class="btn primary" id="sendBtn" onclick="send()">Send</button></div>
-    </div>
+    <div class="df"><div class="qa" id="dq"></div><div class="row"><textarea id="dIn" rows="1" placeholder="AI se poocho…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();dockSend()}"></textarea><button class="btn ai" id="dBtn" onclick="dockSend()">Bhejo</button></div></div>
   </aside>
 </div>
 
-<div class="modal" id="modal" onclick="if(event.target===this)closeModal()"><div class="sheet" id="sheet"></div></div>
+<div class="ov" id="ov" onclick="if(event.target===this)closeDr()"><div class="dr" id="dr"></div></div>
+<div id="toast"></div>
 
 <script>
-const $ = id => document.getElementById(id);
-const api = (p, o = {}) => fetch('/api' + p, { headers: { 'Content-Type': 'application/json' }, ...o }).then(r => r.json());
-const post = (p, b) => api(p, { method: 'POST', body: JSON.stringify(b || {}) });
-const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const I = {
-  edit:'<svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4"/></svg>',
-  down:'<svg viewBox="0 0 24 24"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"/></svg>',
-  copy:'<svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>',
-  look:'<svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 14-5l2 2M20 4v5h-5M20 12a8 8 0 0 1-14 5l-2-2M4 20v-5h5"/></svg>',
-  script:'<svg viewBox="0 0 24 24"><path d="M12 3l2.2 5.3L20 9l-4.4 3.8L17 19l-5-3-5 3 1.4-6.2L4 9l5.8-.7z"/></svg>',
-  trash:'<svg viewBox="0 0 24 24"><path d="M4 7h16M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
-  check:'<svg viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg>', x:'<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
-  chat:'<svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>',
-};
+const $=id=>document.getElementById(id);
+const api=(p,o={})=>fetch('/api'+p,{headers:{'Content-Type':'application/json'},...o}).then(r=>r.json()).catch(e=>({error:String(e.message||e)}));
+const post=(p,b)=>api(p,{method:'POST',body:JSON.stringify(b||{})});
+const put=(p,b)=>api(p,{method:'PUT',body:JSON.stringify(b||{})});
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const clean=t=>String(t||'').replace(/\*/g,'');
+const GEN=['queued','scripting','voice','visuals','render_wait','rendering'];
+const STEP={queued:'Line mein',scripting:'Script likh raha hai',voice:'Voice bana raha hai',visuals:'Images bana raha hai',render_wait:'Render ka wait',rendering:'Video render ho rahi hai'};
+let view='today',plan={today:'',items:[]},reels=[],formats=[],verses=[],settings={},ctxId=null,ctxKind=null;
+let chat=JSON.parse(localStorage.getItem('chat3')||'[]'),vFilter='all',planMode='list';
 
-let reels = [], filter = 'all', chat = JSON.parse(localStorage.getItem('chat2') || '[]'), ctxId = null, editing = null, verses = [];
-let view = 'home';
-const BUSY = ['queued', 'scripting', 'voice', 'visuals', 'render_wait', 'rendering'];
+/* ---- toast + two-step confirm (no blocking alert/confirm) ---- */
+function toast(m,ms=3200){const e=document.createElement('div');e.className='ts';e.textContent=m;$('toast').appendChild(e);setTimeout(()=>e.remove(),ms)}
+function sure(btn,fn,label='Pakka?'){if(btn.dataset.armed){fn();return}btn.dataset.armed=1;const o=btn.innerHTML;btn.innerHTML=label;setTimeout(()=>{delete btn.dataset.armed;btn.innerHTML=o},3000)}
 
-/* ---------- status / sidebar ---------- */
-async function loadStatus() {
-  const s = await api('/status');
-  const row = (k, v, on = true) => `<div><span><span class="dot ${on ? '' : 'off'}"></span>${k}</span><b>${esc(v)}</b></div>`;
-  $('stat').innerHTML = `<h4>Engine</h4>${row('Voice', s.voice.length ? `${s.voice[0]} (${s.voiceName[s.voice[0]] || ''})${s.chant ? ' + chant' : ''}` : 'none - add a key', s.voice.length > 0)}${row('Images', s.images.join(', ') || 'none (stock)', s.images.length > 0)}${row('Stock', s.stock.join(', ') || 'none', s.stock.length > 0)}${row('Music', s.music)}${row('Automation', s.automation ? 'on' : 'off', s.automation)}${row('Auto-publish', s.autoPublish ? 'on' : 'off', s.autoPublish)}${row('Clean-up', s.cleanup)}`;
-}
-
-/* ---------- reels ---------- */
-async function makeReel() { const t = $('topic').value.trim(); if (!t) return; await post('/reels', { topic: t, format: $('fmt').value }); $('topic').value = ''; load(); }
-async function act(id, a, q = '') { await post(`/reels/${id}/${a}${q}`); load(); }
-async function del(id) { if (confirm('Delete this reel and its video?')) { await api('/reels/' + id, { method: 'DELETE' }); if (ctxId === id) setCtx(null); load(); } }
-function copyCap(id, btn) { const r = reels.find(x => x._id === id); navigator.clipboard.writeText(`${r.script.caption}\n\n${(r.script.hashtags || []).join(' ')}`); btn.classList.add('ok'); setTimeout(() => btn.classList.remove('ok'), 900); }
-
-const STEPS = [['scripting', 'Script'], ['voice', 'Voice + chant'], ['visuals', 'Visuals + music'], ['rendering', 'Render']];
-function working(r) {
-  const idx = r.status === 'queued' ? -1 : r.status === 'render_wait' ? 3 : STEPS.findIndex(s => s[0] === r.status);
-  return `<div class="work">${STEPS.map((s, i) => `<div class="step ${i < idx ? 'done' : i === idx ? 'now' : ''}"><i></i>${s[1]}${r.status === 'render_wait' && i === 3 ? ' (waiting)' : ''}</div>`).join('')}
-    <div class="bar"><div style="width:${r.progress || 2}%"></div></div><div class="meta"><span>${r.status === 'queued' ? 'In queue' : (r.progress || 0) + '%'}</span></div></div>`;
-}
-function card(r) {
-  const busy = BUSY.includes(r.status);
-  const media = busy ? working(r) : r.videoFile
-    ? `<video controls preload="metadata" playsinline src="/media/videos/${r.videoFile}?v=${new Date(r.updatedAt).getTime()}"></video>` : r.purgedAt ? `<div class="err" style="color:var(--dim)">Files auto-cleaned (24h). Record and post links stay in Calendar.</div>` : `<div class="err">${esc(r.error || 'No video')}</div>`;
-  const dur = r.durationSec ? `${Math.round(r.durationSec)}s` : '';
-  const isLong = r.format === 'long';
-  const pubs = ['youtube', 'instagram'].filter(k => r.publish?.[k]).map(k => { const x = r.publish[k]; return `<span class="chipx ${x.state === 'done' ? 'ok' : 'bad'}" title="${esc(x.error || '')}">${k === 'youtube' ? 'YT' : 'IG'} ${x.state === 'done' ? (x.scheduled ? 'scheduled' : 'live') : 'error'}</span>`; }).join('');
-  const when = r.scheduledFor ? new Date(r.scheduledFor).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' }) : '';
-  return `<div class="card ${isLong ? 'long' : ''}"><div class="media ${isLong ? 'long' : ''}"><span class="pill ${r.status}">${r.status.replace('_', ' ')}</span>${media}</div>
-    <div class="body"><div><div class="title">${esc(r.topic)}${isLong ? '<span class="fmt">LONG</span>' : ''}</div><div class="hook">${esc(r.script?.hookText || '')}</div></div>
-    <div class="actions">
-      ${r.status === 'ready' || r.status === 'rejected' ? `<button class="btn sm ok" onclick="act('${r._id}','approve')">${I.check}Approve</button>` : ''}
-      ${r.editable && !busy ? `<a class="btn sm primary" href="/editor.html?id=${r._id}">${I.edit}Edit video</a>` : ''}
-      ${r.script && !busy ? `<button class="btn sm" onclick="openEdit('${r._id}')">Script</button>` : ''}
-      ${['ready', 'approved'].includes(r.status) ? `<button class="btn sm" title="Upload now to connected platforms" onclick="publishNow('${r._id}',this)">Publish</button>` : ''}
-      <button class="btn sm icon" title="Ask assistant about this reel" onclick="setCtx('${r._id}',true)">${I.chat}</button>
-      ${r.videoFile && !busy ? `<a class="btn sm icon" title="Download" href="/media/videos/${r.videoFile}" download="${esc(r.topic)}.mp4">${I.down}</a>` : ''}
-      ${r.script ? `<button class="btn sm icon" title="Copy caption + hashtags" onclick="copyCap('${r._id}',this)">${I.copy}</button>` : ''}
-      ${!busy ? `<button class="btn sm icon" title="New look (same script)" onclick="act('${r._id}','regenerate','?mode=render')">${I.look}</button><button class="btn sm icon" title="New script" onclick="act('${r._id}','regenerate','?mode=script')">${I.script}</button>` : ''}
-      ${r.status === 'ready' ? `<button class="btn sm icon bad" title="Reject" onclick="act('${r._id}','reject')">${I.x}</button>` : ''}
-      <button class="btn sm icon bad" title="Delete" onclick="del('${r._id}')">${I.trash}</button>
-    </div><div class="pub">${pubs}</div><div class="meta"><span>${dur}${when ? ' · ' + when : ''}</span><span>${r.style?.artStyle || ''}</span></div></div></div>`;
-}
-async function publishNow(id, btn) { if (!confirm('Upload to connected platforms now?')) return; btn.disabled = true; const r = await post(`/reels/${id}/publish`); if (r.error) alert(r.error); load(); }
-function drawTabs() {
-  const n = f => reels.filter(r => f === 'all' ? true : f === 'busy' ? BUSY.includes(r.status) : f === 'ready' ? ['ready', 'approved', 'published'].includes(r.status) : r.status === f).length;
-  $('tabs').innerHTML = [['all', 'All'], ['busy', 'In progress'], ['ready', 'Ready'], ['failed', 'Failed']].map(([k, l]) => `<button class="tab ${filter === k ? 'on' : ''}" onclick="setFilter('${k}')">${l} ${n(k)}</button>`).join('');
-}
-function setFilter(f) { filter = f; draw(); }
-function draw() {
-  drawTabs();
-  const list = reels.filter(r => filter === 'all' ? true : filter === 'busy' ? BUSY.includes(r.status) : filter === 'ready' ? ['ready', 'approved', 'published'].includes(r.status) : r.status === filter);
-  $('grid').innerHTML = list.map(card).join('') || '<div class="empty">Nothing here yet. Type a topic above or use Bulk create.</div>';
-}
-async function load() {
-  const d = await api('/reels'); reels = d.reels; $('count').textContent = ` · ${d.reels.length}${d.queue ? ` · ${d.queue} in queue` : ''}`;
-  if (!$('modal').classList.contains('on')) draw();
-}
-setInterval(() => { if (![...document.querySelectorAll('video')].some(v => !v.paused)) load(); }, 5000);
-
-/* ---------- modals ---------- */
-const openModal = html => { $('sheet').innerHTML = html; $('modal').classList.add('on'); };
-function closeModal() { $('modal').classList.remove('on'); editing = null; load(); }
-
-function openBulk() {
-  $('sheet').className = 'sheet narrow';
-  openModal(`<div class="sheet-h"><h3>Bulk create</h3><button class="btn icon sm" onclick="closeModal()">${I.x}</button></div>
-  <div class="sheet-b"><div class="f"><label>Topics (one per line)</label><textarea id="bulkTopics" rows="7" placeholder="Overthinking at 3 AM&#10;Heartbreak after breakup&#10;Feeling behind in life"></textarea></div>
-  <div class="f"><label>Or let AI pick topics</label><input id="bulkIdeas" type="number" min="0" max="30" value="0" style="width:120px"><div class="help">Picks fresh topics from your pool and auto-refills with Gemini ideas.</div></div>
-  <div class="help">Reels run in a pipeline: script, voice and images for the next reel are prepared while the current one renders.</div></div>
-  <div class="sheet-f"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" id="bulkBtn" onclick="doBulk()">Create</button></div>`);
-}
-async function doBulk() {
-  const topics = $('bulkTopics').value.split('\n').map(s => s.trim()).filter(Boolean), ideas = +$('bulkIdeas').value || 0;
-  if (!topics.length && !ideas) return;
-  $('bulkBtn').disabled = true; const r = await post('/batch', { topics, ideas });
-  if (r.error) { alert(r.error); $('bulkBtn').disabled = false; return; } closeModal();
+/* ---- keyed patch render: only changed cards are replaced, so nothing flickers / loses focus ---- */
+function patch(host,items,key,html){
+  const have=new Map([...host.children].filter(c=>c.dataset.k).map(c=>[c.dataset.k,c]));const keep=new Set();
+  items.forEach((it,i)=>{const k=String(key(it)),h=html(it);keep.add(k);let el=have.get(k);
+    if(!el){const t=document.createElement('div');t.innerHTML=h;el=t.firstElementChild;el.dataset.k=k;el._h=h;host.insertBefore(el,host.children[i]||null)}
+    else{if(el._h!==h&&!el.contains(document.activeElement)&&!el.querySelector('details[open]')){const t=document.createElement('div');t.innerHTML=h;const n=t.firstElementChild;n.dataset.k=k;n._h=h;host.replaceChild(n,el);el=n}
+      if(host.children[i]!==el)host.insertBefore(el,host.children[i]||null)}});
+  have.forEach((el,k)=>{if(!keep.has(k))el.remove()});
 }
 
-async function openEdit(id) {
-  if (!verses.length) verses = await api('/verses');
-  const r = reels.find(x => x._id === id);
-  editing = { id, script: JSON.parse(JSON.stringify(r.script)), orig: r.script.lines.map(l => l.show), video: r.videoFile };
-  $('sheet').className = 'sheet'; drawEdit(); $('modal').classList.add('on');
-}
-function drawEdit() {
-  const s = editing.script;
-  $('sheet').innerHTML = `<div class="sheet-h"><h3>Edit script</h3><button class="btn icon sm" onclick="closeModal()">${I.x}</button></div>
-  <div class="sheet-b"><div class="edit"><div>${editing.video ? `<video controls src="/media/videos/${editing.video}"></video>` : ''}</div><div>
-    <div class="two"><div class="f"><label>On-screen hook (first 2 s)</label><input value="${esc(s.hookText)}" oninput="editing.script.hookText=this.value"></div>
-    <div class="f"><label>End text (CTA)</label><input value="${esc(s.cta)}" oninput="editing.script.cta=this.value"></div></div>
-    ${s.format === 'long' ? '' : `    <div class="two"><div class="f"><label>Verse (chanted by the narrator)</label><select onchange="editing.script.verseId=this.value">${verses.map(v => `<option value="${v.id}" ${v.id === s.verseId ? 'selected' : ''}>${esc(v.ref)}: ${esc(v.themes.split(',')[0])}</option>`).join('')}</select></div>
-    <div class="f"><label>Chant comes after line</label><select onchange="editing.script.shlokLineIndex=+this.value">${s.lines.map((l, i) => `<option value="${i}" ${i === s.shlokLineIndex ? 'selected' : ''}>${i + 1}. ${esc(l.show.replace(/\*/g, '').slice(0, 34))}</option>`).join('')}</select></div></div>`}
-    ${s.lines.map((l, i) => `<div class="ln"><div class="ln-h">LINE ${i + 1}<div class="grow"></div><button class="btn icon sm bad" onclick="rmLine(${i})" title="Remove line">${I.x}</button></div>
-      <div class="f"><label>Line (Hinglish) - this is the caption and what the narrator says. Wrap a key word in *stars* to highlight it</label><textarea rows="2" oninput="editing.script.lines[${i}].show=this.value">${esc(l.show)}</textarea></div>
-      <div class="two"><div class="f" style="margin:0"><label>AI image prompt (English)</label><textarea rows="2" oninput="editing.script.lines[${i}].image=this.value">${esc(l.image || '')}</textarea></div>
-      <div class="f" style="margin:0"><label>Stock fallback search</label><input value="${esc(l.visual || '')}" oninput="editing.script.lines[${i}].visual=this.value"></div></div></div>`).join('')}
-    <button class="btn" onclick="addLine()">Add line</button>
-    <div class="f" style="margin-top:16px"><label>Post caption</label><textarea rows="3" oninput="editing.script.caption=this.value">${esc(s.caption)}</textarea></div>
-    <div class="f"><label>Hashtags</label><input value="${esc((s.hashtags || []).join(' '))}" oninput="editing.script.hashtags=this.value.split(/\\s+/)"></div>
-    <div class="help">Saving re-generates voice, images and video.</div>
-  </div></div></div>
-  <div class="sheet-f"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" id="saveBtn" onclick="saveEdit()">Save and re-render</button></div>`;
-}
-function addLine() { editing.script.lines.push({ show: '', speak: '', image: 'silhouette against sunrise, misty hills', visual: 'sunrise mountain mist' }); drawEdit(); }
-function rmLine(i) { if (editing.script.lines.length <= 5) return alert('Minimum 5 lines'); editing.script.lines.splice(i, 1); editing.orig.splice(i, 1); if (editing.script.shlokLineIndex >= editing.script.lines.length - 1) editing.script.shlokLineIndex = 1; drawEdit(); }
-async function saveEdit() {
-  const dirty = editing.script.lines.map((l, i) => (l.show !== editing.orig[i] ? i : -1)).filter(i => i >= 0);
-  $('saveBtn').disabled = true; $('saveBtn').textContent = 'Saving...';
-  const r = await api(`/reels/${editing.id}/script`, { method: 'PUT', body: JSON.stringify({ script: editing.script, dirty }) });
-  if (r.error) { alert(r.error); $('saveBtn').disabled = false; $('saveBtn').textContent = 'Save and re-render'; return; }
-  closeModal();
-}
+/* ---- nav ---- */
+function go(v){view=v;['today','videos','plan','settings'].forEach(k=>$('v-'+k).style.display=k===v?'':'none');document.querySelectorAll('.nb[data-v]').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
+  ({today:loadToday,videos:loadVideos,plan:loadPlan,settings:loadSettings})[v]()}
+function toggleAI(force){const on=force??!$('app').classList.contains('ai-on');$('app').classList.toggle('ai-on',on);$('aiBtn').classList.toggle('on',on);localStorage.setItem('aiOn',on?'1':'');if(on)setTimeout(()=>$('dIn').focus(),250)}
+const dayLabel=d=>new Date(d+'T00:00:00').toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'short'});
+const estSec=s=>Math.round((s.lines||[]).reduce((n,l)=>n+clean(l.show).split(/\s+/).filter(Boolean).length,0)/2.4+2+(s.verseId?12.5:0));
+const fmtName=id=>(formats.find(f=>f.id===id)||{}).label||'';
 
-/* ---------- assistant ---------- */
-const SUGG = ['Give me 10 viral topic ideas', 'Hook formulas that work for Gita reels', 'Make this reel\'s hook stronger', 'Rewrite the script punchier', 'Write 3 caption options'];
-function toggleChat() { $('shell').classList.toggle('chat-on'); localStorage.setItem('chatOn', $('shell').classList.contains('chat-on') ? '1' : ''); if ($('shell').classList.contains('chat-on')) $('input').focus(); }
-function setCtx(id, open) { ctxId = id; const r = reels.find(x => x._id === id); $('ctx').style.display = r ? 'inline-block' : 'none'; $('ctx').textContent = r ? `${r.topic} ✕` : ''; if (open && !$('shell').classList.contains('chat-on')) toggleChat(); }
-function clearChat() { chat = []; localStorage.removeItem('chat2'); renderChat(); }
-function renderChat() {
-  if (!chat.length) chat = [{ role: 'assistant', content: 'I can suggest topics and hooks, write captions, and rewrite the script of any reel. Open a reel with the chat icon and I will see its script; if I rewrite it you can apply the change and re-render in one click.' }];
-  $('msgs').innerHTML = chat.map((m, i) => {
-    let extra = '';
-    if (m.newScript) extra += `<div class="chips"><span class="tag">New script · ${m.newScript.lines.length} lines</span><button class="btn sm primary" onclick="makeFromScript(${i})">Make video from this script</button></div>`;
-    if (m.updatedScript) extra += `<div class="chips"><span class="tag">Updated script · ${m.updatedScript.lines.length} lines</span><button class="btn sm primary" onclick="applyChat(${i})">Apply and re-render</button></div>`;
-    if (m.topics?.length) extra += `<div class="chips">${m.topics.map((t, k) => `<button class="chip" onclick="topicToReel(${i},${k})">+ ${esc(t)}</button>`).join('')}</div>`;
-    return m.role === 'user' ? `<div class="msg user"><div class="txt">${esc(m.content)}</div></div>` : `<div class="msg"><div class="av">ॐ</div><div class="txt ${m.content === '…' ? 'typing' : ''}">${esc(m.content)}${extra}</div></div>`;
-  }).join('');
-  $('msgs').scrollTop = $('msgs').scrollHeight;
-  $('sugg').innerHTML = chat.length < 3 ? SUGG.map(s => `<button class="chip" onclick="quick(this.textContent)">${esc(s)}</button>`).join('') : '';
-  localStorage.setItem('chat2', JSON.stringify(chat.filter(m => m.content !== '…').slice(-40)));
+/* ================= TODAY ================= */
+const NEXT=i=>{const r=i.reel,rs=r?r.status:'';
+  if(i.status==='skipped')return['skip'];if(GEN.includes(rs))return['busy'];if(rs==='published')return['done'];if(rs==='approved')return['sched'];if(rs==='ready')return['review'];if(rs==='failed')return['failed'];
+  return[i.script?'make':'script']};
+function vcard(i){
+  const r=i.reel,s=i.script,[st]=NEXT(i),long=i.kind==='long';
+  const label={skip:['Skip','chip'],busy:[STEP[r&&r.status]||'Chal raha hai','chip y'],done:['Post ho gayi ✓','chip g'],sched:['Approved · time par post hogi','chip g'],review:['Dekh ke approve karo','chip y'],failed:['Fail hui','chip r'],make:['Script ready','chip p'],script:['Script baaki','chip']}[st];
+  const ph=r&&r.videoFile&&!GEN.includes(r.status)?`<div class="ph"><video controls playsinline preload="metadata" src="/media/videos/${r.videoFile}?v=${new Date(r.updatedAt).getTime()}"></video></div>`
+    :GEN.includes(r&&r.status)?`<div class="ph empty"><div class="ring"><div class="num">${r.progress||0}%</div>${esc(STEP[r.status]||'')}</div></div>`
+    :`<div class="ph empty"><div class="ring">${s?'Video<br>baaki':'Script<br>baaki'}</div></div>`;
+  const hook=s?clean(s.hookText||s.title||''):'';
+  const body=s?clean((s.lines||[]).map(l=>l.show).join(' · ')):(i.scriptBusy?'AI script likh raha hai…':'Abhi script nahi hai — "AI se likho" dabao.');
+  const est=s&&!long?estSec(s):0;
+  const primary={script:`<button class="btn ai" onclick="openStudio('${i._id}',true)">✨ AI se script likho</button>`,
+    make:`<button class="btn gold" onclick="runItem('${i._id}')">Video banao</button><button class="btn ai" onclick="openStudio('${i._id}')">✨ Script sudharo</button>`,
+    review:`<button class="btn green" onclick="act('${r&&r._id}','approve')">✓ Approve</button>${r&&r.editable?`<a class="btn" href="/editor.html?id=${r._id}">Edit video</a>`:''}<button class="btn ai" onclick="aiAbout('${r&&r._id}','reel')">✨ AI feedback</button>`,
+    sched:`${r&&r.editable?`<a class="btn" href="/editor.html?id=${r._id}">Edit video</a>`:''}<button class="btn" onclick="pubNow('${r&&r._id}',this)">Abhi post karo</button>`,
+    done:['youtube','instagram'].filter(p=>r.publish&&r.publish[p]&&r.publish[p].url).map(p=>`<a class="btn" target="_blank" href="${esc(r.publish[p].url)}">${p==='youtube'?'YouTube':'Instagram'} ↗</a>`).join(''),
+    failed:`<button class="btn gold" onclick="act('${r&&r._id}','regenerate','?mode=script')">Dobara try</button>`,busy:'',skip:`<button class="btn" onclick="planEdit('${i._id}',{status:'planned'})">Undo skip</button>`}[st];
+  const open=i.status==='planned';
+  const menu=`<details class="more"><summary class="btn sm">⋯</summary><div class="menu">
+    ${open?`<button onclick="openStudio('${i._id}')">Script padho / badlo</button><button onclick="suggestTopic('${i._id}')">Naya topic (AI)</button><button onclick="planEdit('${i._id}',{status:'skipped'})">Aaj skip karo</button>`:''}
+    ${r&&r.videoFile&&!GEN.includes(r.status)?`<a href="/media/videos/${r.videoFile}" download="${esc(i.topic)}.mp4">Download</a><button onclick="act('${r._id}','regenerate','?mode=render')">Naya look (same script)</button><button onclick="act('${r._id}','regenerate','?mode=script')">Naya script + video</button>`:''}
+    ${r&&r.script?`<button onclick="copyCap('${r._id}')">Caption copy</button>`:''}</div></details>`;
+  return `<div class="vc"><div>${ph}</div><div class="vb">
+    <div class="vt"><span class="${label[1]}">${label[0]}</span>${long?'<span class="chip p">LONG</span>':''}${s&&fmtName(s.formatId)?`<span class="chip">${esc(fmtName(s.formatId))}</span>`:''}${s&&!long?`<span class="chip ${est<28||est>62?'r':''}">${s.verseId?'Shlok ✓':'No shlok'} · ~${est}s</span>`:''}<span class="chip">⏰ ${esc(i.publishTime||'')}</span></div>
+    ${hook?`<div class="vh">${esc(hook)}</div><div class="vtopic">${esc(i.topic)}</div>`:`<div class="vh">${esc(i.topic)}</div>`}
+    ${GEN.includes(r&&r.status)?`<div class="bar"><i style="width:${r.progress||2}%"></i></div>`:`<div class="vs">${esc(body)}</div>`}
+    ${st==='failed'&&r.error?`<div class="err">${esc(r.error)}</div>`:''}
+    <div class="va">${primary}<div class="grow"></div>${menu}</div></div></div>`;
 }
-function quick(t) { $('input').value = t; send(); }
-async function send() {
-  const t = $('input').value.trim(); if (!t || $('sendBtn').disabled) return;
-  $('input').value = ''; chat.push({ role: 'user', content: t }); chat.push({ role: 'assistant', content: '…' }); renderChat(); $('sendBtn').disabled = true;
-  const r = await post('/chat', { messages: chat.filter(m => m.content !== '…').map(({ role, content }) => ({ role, content })), reelId: ctxId });
-  chat.pop(); chat.push(r.error ? { role: 'assistant', content: 'Error: ' + r.error } : { role: 'assistant', content: r.reply, updatedScript: r.updatedScript, newScript: r.newScript, topics: r.topics, reelId: ctxId });
-  $('sendBtn').disabled = false; renderChat();
+async function loadToday(){
+  const[p,st]=await Promise.all([api('/plan'),api('/settings')]);if(p.error)return;plan=p;settings=st;
+  const items=plan.items.filter(i=>i.date===plan.today);const open=items.filter(i=>i.status==='planned');
+  $('tSub').textContent=`${dayLabel(plan.today)} · ${st.automation?`Auto: ${st.generateAt} IST`:'Automation OFF'} · ${st.autoPublish?'khud post hogi':'post manual'}`;
+  const n=f=>items.filter(f).length;
+  $('prog').innerHTML=[['Script baaki',n(i=>i.status==='planned'&&!i.script)],['Banne wali',n(i=>NEXT(i)[0]==='busy'||(i.status==='planned'&&i.script))],['Review',n(i=>NEXT(i)[0]==='review')],['Post ho gayi',n(i=>NEXT(i)[0]==='done'||NEXT(i)[0]==='sched')]].map(([l,v])=>`<div class="pstep"><b>${v}</b><span>${l}</span></div>`).join('');
+  $('tGen').textContent=open.length?`Sab ${open.length} video banao`:'Sab ho gaya';$('tGen').disabled=!open.length;
+  $('tScripts').style.display=open.some(i=>!i.script&&!i.scriptBusy)?'':'none';
+  if(!items.length)$('tList').innerHTML='<div class="empty">Aaj kuch planned nahi. AI se topic maango ↑ ya Settings mein shorts/day set karo.</div>';
+  else{if($('tList').querySelector('.empty'))$('tList').innerHTML='';patch($('tList'),items,i=>i._id,vcard)}
+  $('tNote').textContent=`Files ${st.keepHours} ghante baad auto-delete hoti hain; record aur links Plan → Calendar mein rehte hain.`;
+  $('sugs').innerHTML=['Aaj ke liye 3 viral topic do','Mere pichle hooks kamzor kyun the?','Ek bohot emotional story-reel likho','Kal ke liye heartbreak wali reel plan karo'].map(s=>`<button class="sg" onclick="cmdQuick(this.textContent)">${esc(s)}</button>`).join('');
 }
-async function applyChat(i) {
-  const m = chat[i]; if (!m.reelId) return alert('Open a reel with the chat icon first');
-  const r = await api(`/reels/${m.reelId}/script`, { method: 'PUT', body: JSON.stringify({ script: m.updatedScript, dirty: [] }) });
-  if (r.error) return alert(r.error); delete m.updatedScript; renderChat(); load();
-}
-async function makeFromScript(i) {
-  const m = chat[i]; const r = await post('/reels/from-script', { topic: m.newScript.hookText, script: m.newScript });
-  if (r.error) return alert(r.error); delete m.newScript; renderChat(); setView('reels'); load();
-}
-async function topicToReel(i, k) { await post('/reels', { topic: chat[i].topics[k] }); load(); }
+async function genAll(){const r=await post('/plan/run-today');toast(`${r.started||0} video shuru`);loadToday()}
+async function writeScripts(){const r=await post(`/plan/day/${plan.today}/scripts`);toast(r.started?`${r.started} script likhi ja rahi hain`:'Kuch likhna baaki nahi');loadToday()}
+async function runItem(id){await post(`/plan/${id}/run`);toast('Video shuru ho gayi');loadToday()}
+async function planEdit(id,p){await put('/plan/'+id,p);view==='plan'?loadPlan():loadToday()}
+async function suggestTopic(id){toast('AI naya topic soch raha hai…');await post(`/plan/${id}/suggest`);view==='plan'?loadPlan():loadToday()}
+async function act(id,a,q=''){const r=await post(`/reels/${id}/${a}${q}`);if(r.error)toast(r.error);else toast(a==='approve'?'Approve ho gayi ✓':'Ho gaya');refresh()}
+async function pubNow(id,b){sure(b,async()=>{const r=await post(`/reels/${id}/publish`);toast(r.error||'Upload shuru');refresh()},'Pakka post karein?')}
+function copyCap(id){const r=reels.find(x=>x._id===id)||(plan.items.find(i=>i.reel&&i.reel._id===id)||{}).reel;const s=r&&r.script;if(!s)return;navigator.clipboard.writeText(`${s.caption}\n\n${(s.hashtags||[]).join(' ')}`);toast('Caption copy ho gaya')}
+function refresh(){if(view==='today')loadToday();if(view==='videos')loadVideos();if(view==='plan')loadPlan()}
+setInterval(()=>{if(document.hidden||$('ov').classList.contains('on'))return;const busy=(view==='today'||view==='plan')&&plan.items.some(i=>i.scriptBusy||(i.reel&&GEN.includes(i.reel.status)));if(busy||view==='videos'&&reels.some(r=>GEN.includes(r.status)))refresh()},5000);
 
-/* ---------- views ---------- */
-function setView(v) {
-  view = v;
-  for (const k of ['home', 'reels', 'plan', 'calendar', 'settings']) $('v-' + k).style.display = k === v ? 'block' : 'none';
-  document.querySelectorAll('#nav button[data-v]').forEach(b => b.classList.toggle('on', b.dataset.v === v));
-  if (v === 'home') loadHome(); if (v === 'plan') loadPlan(); if (v === 'calendar') loadCalendar(); if (v === 'settings') loadSettings();
+/* ================= VIDEOS ================= */
+async function loadVideos(){const d=await api('/reels');if(d.error)return;reels=d.reels;
+  const F={all:()=>true,busy:r=>GEN.includes(r.status),ready:r=>['ready','approved','published'].includes(r.status),failed:r=>r.status==='failed'};
+  $('vSub').textContent=`${reels.length} videos${d.queue?` · ${d.queue} line mein`:''}`;
+  $('vTabs').innerHTML=[['all','Sab'],['busy','Ban rahi'],['ready','Ready'],['failed','Fail']].map(([k,l])=>`<button class="tab ${vFilter===k?'on':''}" onclick="vFilter='${k}';loadVideos()">${l} ${reels.filter(F[k]).length}</button>`).join('');
+  const list=reels.filter(F[vFilter]);const g=$('vGrid');if(!list.length){g.innerHTML='<div class="empty" style="grid-column:1/-1">Yahan kuch nahi.</div>';return}
+  if(g.querySelector('.empty'))g.innerHTML='';
+  patch(g,list,r=>r._id,r=>{const busy=GEN.includes(r.status);
+    const m=busy?`<div class="ring" style="text-align:center;color:var(--mute)"><div class="num" style="font-size:26px;font-weight:700;color:var(--gold)">${r.progress||0}%</div>${esc(STEP[r.status]||'')}</div>`:r.videoFile?`<video controls playsinline preload="metadata" src="/media/videos/${r.videoFile}?v=${new Date(r.updatedAt).getTime()}"></video>`:`<div class="help" style="padding:16px;text-align:center">${r.purgedAt?'Files auto-clean ho gayi':'—'}</div>`;
+    const chip={published:'chip g',approved:'chip g',ready:'chip y',failed:'chip r',rejected:'chip r'}[r.status]||'chip';
+    return `<div class="gc"><div class="m">${m}</div><div class="b"><span class="${chip}" style="align-self:flex-start">${esc(r.status.replace('_',' '))}</span><div class="t">${esc((r.script&&clean(r.script.hookText))||r.topic)}</div><div class="help">${esc(r.topic)}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">${r.status==='ready'||r.status==='rejected'?`<button class="btn sm green" onclick="act('${r._id}','approve')">✓ Approve</button>`:''}${r.editable&&!busy?`<a class="btn sm" href="/editor.html?id=${r._id}">Edit</a>`:''}${r.script&&!busy?`<button class="btn sm ai" onclick="aiAbout('${r._id}','reel')">✨ AI</button>`:''}
+      <details class="more"><summary class="btn sm">⋯</summary><div class="menu">${r.script&&!busy?`<button onclick="openReelScript('${r._id}')">Script edit</button>`:''}${r.videoFile&&!busy?`<a href="/media/videos/${r.videoFile}" download>Download</a><button onclick="act('${r._id}','regenerate','?mode=render')">Naya look</button><button onclick="act('${r._id}','regenerate','?mode=script')">Naya script</button>`:''}${r.script?`<button onclick="copyCap('${r._id}')">Caption copy</button>`:''}${['ready','approved'].includes(r.status)?`<button onclick="pubNow('${r._id}',this)">Abhi post karo</button>`:''}<button class="red" onclick="sure(this,async()=>{await api('/reels/${r._id}',{method:'DELETE'});loadVideos()})">Delete</button></div></details></div></div></div>`});
 }
-const dayLabel = d => new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' });
+async function newReel(){const t=$('newTopic').value.trim();if(!t)return;await post('/reels',{topic:t});$('newTopic').value='';toast('Video line mein lag gayi');loadVideos()}
 
-/* ---------- plan ---------- */
-let plan = { today: '', items: [] };
-async function loadPlan() {
-  plan = await api('/plan'); const st = await api('/settings');
-  $('planSub').textContent = `${st.automation ? 'Automation ON' : 'Automation OFF (turn it on in Settings)'} · generation starts ${st.generateAt} IST · ${st.shorts} shorts + ${st.long} long per day. Edit any topic or open Script to read, change or paste a script before it is made. If you do not start a day yourself, automation does it at the set time.`;
-  const days = {}; plan.items.forEach(i => (days[i.date] = days[i.date] || []).push(i));
-  $('planBody').innerHTML = Object.keys(days).map(d => `<div class="day"><div class="top-row" style="margin-bottom:8px"><h3 style="margin:0">${d === plan.today ? 'Today · ' : ''}${dayLabel(d)}</h3><div class="grow"></div>${days[d].some(x => x.status === 'planned') ? `<button class="btn sm primary" onclick="planRunDay('${d}')">Generate this day</button>` : ''}</div>${days[d].map(planRow).join('')}</div>`).join('') || '<p class="sub">No plan yet.</p>';
-}
-function planRow(i) {
-  const lock = i.status !== 'planned'; const st = i.reel ? `${i.reel.status}${i.reel.status === 'rendering' ? ' ' + i.reel.progress + '%' : ''}` : i.status;
-  return `<div class="prow" style="grid-template-columns:70px 1fr 96px 110px auto"><span class="kind ${i.kind}">${i.kind === 'long' ? 'LONG' : 'SHORT'}</span>
-    <input value="${esc(i.topic)}" ${lock ? 'disabled' : ''} onchange="planEdit('${i._id}',{topic:this.value})">
-    <input type="time" value="${esc(i.publishTime || '')}" ${lock ? 'disabled' : ''} onchange="planEdit('${i._id}',{publishTime:this.value})" title="Publish time (IST)">
-    <span class="pst ${i.status}">${esc(st)}</span>
-    <span class="actions"><button class="btn sm ${i.script ? 'ok' : ''}" onclick="openStudio('${i._id}')">${i.script ? 'Script ✓' : 'Script'}</button>${lock ? '' : `<button class="btn sm" onclick="planSuggest('${i._id}')">New topic</button><button class="btn sm" onclick="planRun('${i._id}')">Make now</button><button class="btn sm icon bad" title="Skip" onclick="planEdit('${i._id}',{status:'skipped'})">${I.x}</button>`}</span></div>`;
-}
-async function planEdit(id, patch) { await api('/plan/' + id, { method: 'PUT', body: JSON.stringify(patch) }); loadPlan(); }
-async function planSuggest(id) { await post(`/plan/${id}/suggest`); loadPlan(); }
-async function planRun(id) { await post(`/plan/${id}/run`); loadPlan(); load(); }
-async function planRunDay(d) { if (!confirm(`Start generating all planned videos of ${dayLabel(d)}? (If you do nothing, automation does this at the set time.)`)) return; const r = await post(`/plan/day/${d}/run`); alert(`${r.started || 0} video(s) started`); loadPlan(); load(); }
-async function planRunToday() { if (!confirm("Start generating all of today's planned videos now?")) return; const r = await post('/plan/run-today'); alert(`${r.started || 0} video(s) started`); loadPlan(); load(); }
-async function planReset() { if (!confirm('Replace all upcoming planned topics with fresh AI topics?')) return; await post('/plan/reset'); loadPlan(); }
+/* ================= PLAN ================= */
+function planTab(t){planMode=t;$('p-list').style.display=t==='list'?'':'none';$('p-cal').style.display=t==='cal'?'':'none';$('pt-list').classList.toggle('on',t==='list');$('pt-cal').classList.toggle('on',t==='cal');t==='cal'?loadCal():loadPlan()}
+const fmtOpts=sel=>'<option value="">Auto type</option>'+formats.map(f=>`<option value="${f.id}" ${f.id===sel?'selected':''}>${esc(f.label)}</option>`).join('');
+async function loadPlan(){if(planMode==='cal')return loadCal();const[p,st]=await Promise.all([api('/plan'),api('/settings')]);if(p.error)return;plan=p;settings=st;
+  $('pSub').textContent=`${st.shorts} shorts/din · ${st.automation?'automation ON':'automation OFF'}`;
+  const days={};plan.items.forEach(i=>(days[i.date]=days[i.date]||[]).push(i));
+  $('pBody').innerHTML=Object.keys(days).map(d=>`<div class="day"><h3>${d===plan.today?'Aaj · ':''}${dayLabel(d)}</h3>${days[d].map(prow).join('')}</div>`).join('')||'<div class="empty">Plan khaali hai.</div>'}
+function prow(i){const lock=i.status!=='planned',short=i.kind!=='long';return `<div class="pr"><span class="chip ${short?'':'p'}">${short?'SHORT':'LONG'}</span>
+  <input value="${esc(i.topic)}" ${lock?'disabled':''} onchange="planEdit('${i._id}',{topic:this.value})">
+  ${short?`<select ${lock?'disabled':''} onchange="planEdit('${i._id}',{formatId:this.value})">${fmtOpts(i.formatId)}</select>`:'<span></span>'}
+  <input type="time" value="${esc(i.publishTime||'')}" ${lock?'disabled':''} onchange="planEdit('${i._id}',{publishTime:this.value})">
+  <span class="chip ${i.script?'g':''}">${i.scriptBusy?'likh raha…':i.script?'Script ✓':i.reel?esc(i.reel.status):esc(i.status)}</span>
+  <span style="display:flex;gap:6px"><button class="btn sm ai" onclick="openStudio('${i._id}',${i.script?'false':'true'})">✨ Script</button>${lock?'':`<button class="btn sm" onclick="suggestTopic('${i._id}')">Naya topic</button>`}</span></div>`}
+const b64=f=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]);r.onerror=rej;r.readAsDataURL(f)});
+async function weekImport(){const text=$('wkText').value.trim(),f=$('wkFile').files[0];if(!text&&!f)return toast('Text paste karo ya file chuno');if(f&&f.size>15e6)return toast('File 15 MB se choti honi chahiye');
+  $('wkMsg').textContent='AI plan padh raha hai…';const body={text,brief:$('wkBrief').value.trim(),startDate:$('wkStart').value||undefined};
+  if(f)body.file={name:f.name,mime:f.type||(/\.txt$/i.test(f.name)?'text/plain':'application/pdf'),data:await b64(f)};
+  const r=await post('/plan/week/import',body);$('wkMsg').textContent=r.error?r.error:r.created?`${r.created} reel plan mein, ${r.scriptsQueued} script ban rahi hain`:(r.note||'Kuch nahi mila');loadPlan()}
+async function weekAI(){$('wkMsg').textContent='AI week plan bana raha hai…';const r=await post('/plan/week/ai',{brief:$('wkBrief').value.trim()});$('wkMsg').textContent=r.error?r.error:`${r.created} slot, ${r.scriptsQueued} script ban rahi hain`;loadPlan()}
+/* calendar */
+const iso=()=>new Date(Date.now()+5.5*36e5).toISOString().slice(0,10);let cal={month:'',data:null,sel:''};
+async function loadCal(m){cal.month=m||cal.month||iso().slice(0,7);cal.data=await api('/calendar?month='+cal.month);if(cal.data.error)return;if(!cal.sel||cal.sel.slice(0,7)!==cal.month)cal.sel=cal.month===iso().slice(0,7)?iso():cal.month+'-01';drawCal()}
+function calGo(n){if(!n){cal.month='';cal.sel='';return loadCal()}const[y,mo]=cal.month.split('-').map(Number);cal.sel='';loadCal(new Date(Date.UTC(y,mo-1+n,1)).toISOString().slice(0,7))}
+const cst=e=>e.status==='published'?'pub':['approved','ready'].includes(e.status)?'sch':GEN.includes(e.status)?'gen':['failed','rejected','missed'].includes(e.status)?'bad':'';
+function drawCal(){const{month,days,today}=cal.data,[y,mo]=month.split('-').map(Number);$('calT').textContent=new Date(Date.UTC(y,mo-1,1)).toLocaleDateString('en-IN',{month:'long',year:'numeric',timeZone:'UTC'});
+  const first=(new Date(Date.UTC(y,mo-1,1)).getUTCDay()+6)%7,dim=new Date(Date.UTC(y,mo,0)).getUTCDate();
+  let h=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d=>`<div class="dow">${d}</div>`).join('')+'<div class="cell e"></div>'.repeat(first);
+  for(let d=1;d<=dim;d++){const dt=`${month}-${String(d).padStart(2,'0')}`,ev=days[dt]||[];h+=`<div class="cell ${dt===today?'today':''} ${dt===cal.sel?'sel':''}" onclick="cal.sel='${dt}';drawCal()"><div class="d">${d}</div>${ev.slice(0,3).map(e=>`<div class="ce ${cst(e)}">${esc(e.topic)}</div>`).join('')}${ev.length>3?`<div class="help">+${ev.length-3}</div>`:''}</div>`}
+  $('calG').innerHTML=h;const ev=days[cal.sel]||[];
+  $('calD').innerHTML=`<b>${dayLabel(cal.sel)}</b>`+(ev.length?ev.map(e=>`<div class="drow"><span class="chip ${cst(e)==='pub'?'g':cst(e)==='bad'?'r':''}">${esc(e.status)}</span><b style="flex:1;min-width:160px">${esc(e.topic)}${e.hook?`<br><span class="help">${esc(e.hook)}</span>`:''}</b><span class="chip">${esc(e.time)}</span>${Object.entries(e.platforms||{}).map(([p,v])=>v.url?`<a class="btn sm" target="_blank" href="${esc(v.url)}">${p==='youtube'?'YouTube':'Instagram'} ↗</a>`:'').join('')}</div>`).join(''):'<div class="help" style="margin-top:8px">Is din koi video nahi.</div>')}
 
-/* ---------- home: today's plan ---------- */
-const clean = t => String(t || '').replace(/\*/g, '');
-const GEN = ['queued', 'scripting', 'voice', 'visuals', 'render_wait', 'rendering'];
-let homeMsg = '';
-async function loadHome() {
-  plan = await api('/plan'); const st = await api('/settings');
-  const items = plan.items.filter(i => i.date === plan.today);
-  const open = items.filter(i => i.status === 'planned');
-  $('homeSub').textContent = `${dayLabel(plan.today)} · ${st.automation ? `Automation ON: ${st.generateAt} IST par khud generate hoga` : 'Automation OFF'} · ${st.autoPublish ? 'har video apne time par khud post hogi' : 'auto-publish OFF'}`;
-  $('homeGenAll').textContent = open.length ? `Generate all ${open.length} ${open.length === 1 ? 'video' : 'videos'}` : 'Sab ho gaya';
-  $('homeGenAll').disabled = !open.length;
-  $('homeScripts').style.display = open.some(i => !i.script && !i.scriptBusy) ? '' : 'none';
-  $('homeBody').innerHTML = (items.length ? items.map(homeCard).join('') : '<div class="box">Aaj ke liye kuch planned nahi hai. Settings mein Shorts per day dekho.</div>')
-    + `<div class="hnote">${homeMsg ? esc(homeMsg) + ' · ' : ''}Video, audio aur images generate hone ke ${st.keepHours} ghante baad apne aap delete ho jaate hain (record aur post links Calendar mein rehte hain).</div>`;
-}
-function homeCard(i) {
-  const r = i.reel, s = i.script, locked = i.status !== 'planned';
-  const rs = r ? r.status : '';
-  const chip = i.status === 'skipped' ? '<span class="chip2">Skipped</span>'
-    : rs === 'published' ? '<span class="chip2 live">Published</span>'
-    : rs === 'approved' ? '<span class="chip2 live">Approved · scheduled</span>'
-    : rs === 'ready' ? '<span class="chip2 work">Ready · approve karo</span>'
-    : GEN.includes(rs) ? `<span class="chip2 work">${rs.replace('_', ' ')} ${r.progress || 0}%</span>`
-    : rs === 'failed' ? '<span class="chip2 err">Failed</span>' : '<span class="chip2">Not generated</span>';
-  const lines = s ? (s.lines || []).map(l => `<li>${esc(clean(l.show))}</li>`).join('') : '';
-  const scriptBlock = s
-    ? `<div class="hook">${esc(s.hookText || s.title || '')}</div><details ${i.kind === 'long' ? '' : 'open'}><summary>Script (${(s.lines || []).length} lines)</summary><ol class="slines">${lines}</ol>${s.caption ? `<div class="cap">${esc(s.caption)}\n${esc((s.hashtags || []).join(' '))}</div>` : ''}</details>`
-    : i.scriptBusy ? '<div class="sub" style="margin:8px 0">Script likh raha hoon…</div>'
-    : '<div class="sub" style="margin:8px 0">Script abhi nahi bani. Generate dabaoge to video ke saath ban jayegi, ya pehle "Script" se padh lo.</div>';
-  const links = r && r.publish ? ['youtube', 'instagram'].filter(p => r.publish[p]?.url).map(p => `<a class="btn sm" target="_blank" href="${esc(r.publish[p].url)}">${p === 'youtube' ? 'YouTube' : 'Instagram'} ↗</a>`).join('') : '';
-  const watch = r && r.videoFile && !GEN.includes(rs) ? `<a class="btn sm" target="_blank" href="/media/videos/${r.videoFile}">Watch</a>` : '';
-  const actions = i.status === 'skipped' ? `<button class="btn sm" onclick="homeEdit('${i._id}',{status:'planned'})">Undo skip</button>`
-    : locked ? `${watch}${links}<button class="btn sm" onclick="setView('reels')">Open in Reels</button>`
-    : `<button class="btn sm ${s ? 'ok' : ''}" onclick="openStudio('${i._id}')">${s ? 'Script ✓ edit' : 'Script'}</button><button class="btn sm" onclick="homeSuggest('${i._id}')">New topic</button><button class="btn sm primary" onclick="homeRun('${i._id}')">Generate this</button><button class="btn sm" onclick="homeEdit('${i._id}',{status:'skipped'})">Skip</button>`;
-  return `<div class="hcard"><div class="hcard-h"><span class="kind ${i.kind}">${i.kind === 'long' ? 'LONG' : 'SHORT'}</span><h3>${esc(i.topic)}</h3><span class="chip2">Post ${esc(i.publishTime || '')} IST</span>${chip}</div>
-    ${GEN.includes(rs) ? `<div class="bar"><i style="width:${r.progress || 0}%"></i></div>` : ''}${scriptBlock}${rs === 'failed' && r.error ? `<div class="err">${esc(r.error)}</div>` : ''}
-    <div class="hact">${actions}</div></div>`;
-}
-async function homeGenAll() { homeMsg = ''; $('homeGenAll').disabled = true; const r = await post('/plan/run-today'); homeMsg = `${r.started || 0} video(s) started`; loadHome(); load(); }
-async function homeScripts() { const r = await post(`/plan/day/${plan.today}/scripts`); homeMsg = r.started ? `${r.started} script(s) likhi ja rahi hain` : ''; loadHome(); }
-async function homeRun(id) { homeMsg = ''; await post(`/plan/${id}/run`); loadHome(); load(); }
-async function homeSuggest(id) { await post(`/plan/${id}/suggest`); loadHome(); }
-async function homeEdit(id, patch) { await api('/plan/' + id, { method: 'PUT', body: JSON.stringify(patch) }); loadHome(); }
-setInterval(() => { if (view === 'home' && !$('modal').classList.contains('on') && plan.items.some(i => i.scriptBusy || (i.reel && GEN.includes(i.reel.status)))) loadHome(); }, 5000);
+/* ================= SCRIPT STUDIO (drawer) with AI quick-actions ================= */
+let S=null;
+const AIQ=[['🔥 Hook aur strong karo','Is script ka hook scroll-stopping banao (8 words se kam, curiosity ya tension ke saath). Baaki script same rakho.'],['💬 Aur emotional karo','Is script ko aur emotional aur personal banao: ek specific scene, ek chubhne wali line. Cheezein generic mat rakhna.'],['✂️ Chhota karo','Is script ko 15-20% chhota karo, sirf sabse strong lines rakho.'],['🎭 Naya angle','Isi topic par bilkul alag angle se script likho, hook alag ho.'],['🗣 Bolne mein natural banao','Lines ko aise badlo jaise koi dost bolta hai: chhote vaakya, pauses, koi kitabi shabd nahi.']];
+async function openStudio(id,gen){const it=plan.items.find(x=>x._id===id);if(!it)return;if(!verses.length)verses=await api('/verses');
+  S={kind:'plan',id,item:it,topic:it.topic,formatId:it.formatId||'',script:it.script?JSON.parse(JSON.stringify(it.script)):null,prev:null,busy:'',long:it.kind==='long',msgs:[]};drawStudio();$('ov').classList.add('on');if(gen&&!S.script&&!S.long)studioGen()}
+async function openReelScript(id){const r=reels.find(x=>x._id===id);if(!r||!r.script)return;if(!verses.length)verses=await api('/verses');
+  S={kind:'reel',id,topic:r.topic,formatId:r.script.formatId,script:JSON.parse(JSON.stringify(r.script)),orig:r.script.lines.map(l=>l.show),prev:null,busy:'',long:r.format==='long',msgs:[]};drawStudio();$('ov').classList.add('on')}
+function closeDr(){$('ov').classList.remove('on');S=null;refresh()}
+function drawStudio(){const s=S.script,rl=S.kind==='reel';
+  const body=!s?`<div class="empty">${S.busy?esc(S.busy):'Abhi script nahi hai.'}<br><br>${S.long?'':`<select id="sf" style="width:260px;margin-bottom:12px" onchange="S.formatId=this.value">${fmtOpts(S.formatId)}</select><br>`}<button class="btn ai" ${S.busy?'disabled':''} onclick="studioGen()">✨ AI se script likho</button></div>`
+  :`<div class="aiq">${AIQ.map(([l,p],k)=>`<button class="btn sm ai" ${S.busy?'disabled':''} onclick="studioAI(${k})">${l}</button>`).join('')}</div>
+    ${S.busy?`<div class="chip p" style="margin-bottom:12px">✨ ${esc(S.busy)}</div>`:''}
+    <div class="f" style="margin-bottom:12px"><label>On-screen hook</label><input value="${esc(s.hookText)}" oninput="S.script.hookText=this.value"></div>
+    ${S.long?'':`<div class="vt" style="margin-bottom:12px"><span class="chip">${esc(fmtName(s.formatId)||'')}</span><span class="chip ${estSec(s)<28||estSec(s)>62?'r':''}">${s.verseId?'Shlok ✓':'No shlok'} · ~${estSec(s)}s</span></div>`}
+    ${s.lines.map((l,i)=>`<div class="ln ${s.verseId&&i===s.shlokLineIndex?'chant':''}"><div class="n">${i+1}</div><div><textarea rows="2" oninput="S.script.lines[${i}].show=this.value">${esc(l.show)}</textarea>${s.verseId&&i===s.shlokLineIndex?'<div class="help">↑ is line ke baad shlok chant hoga</div>':''}</div></div>`).join('')}
+    <div class="f" style="margin-top:14px"><label>Post caption</label><textarea rows="2" oninput="S.script.caption=this.value">${esc(s.caption)}</textarea></div>
+    <div class="f" style="margin-top:12px"><label>AI ko apne words mein batao kya badalna hai</label><div style="display:flex;gap:8px"><input id="sIn" placeholder="e.g. last line ko question banao" onkeydown="if(event.key==='Enter')studioFree()"><button class="btn ai" onclick="studioFree()">Bhejo</button></div></div>
+    ${S.msgs.length?`<div class="help" style="margin-top:10px;white-space:pre-wrap">${esc(S.msgs.at(-1))}</div>`:''}`;
+  $('dr').innerHTML=`<div class="hh"><h3>${esc(S.topic)}</h3><button class="btn sm" onclick="closeDr()">✕</button></div><div class="bb">${body}</div>
+  <div class="ff"><span class="help" style="margin-right:auto">${rl?'Save karoge to voice + video dobara banegi':'Save kiya script video mein as-is use hoga'}</span>${S.prev?'<button class="btn" onclick="S.script=S.prev;S.prev=null;drawStudio()">↩ Undo AI change</button>':''}<button class="btn" onclick="closeDr()">Band</button><button class="btn gold" ${s?'':'disabled'} onclick="studioSave()">${rl?'Save + re-render':'Save script'}</button></div>`}
+async function studioGen(){S.busy='AI script likh raha hai…';drawStudio();const r=await post(`/plan/${S.id}/script`,{formatId:S.formatId||undefined});S.busy='';if(r.error){toast(r.error);return drawStudio()}S.script=r.script||r;drawStudio()}
+function studioAI(k){studioChat(AIQ[k][1])}function studioFree(){const t=$('sIn').value.trim();if(t)studioChat(t)}
+async function studioChat(text){S.busy='AI soch raha hai…';drawStudio();const base=S.kind==='plan'?{planId:S.id}:{reelId:S.id};
+  if(S.kind==='plan'){const q=await put('/plan/'+S.id,{script:S.script});if(q.script)S.script=q.script}
+  const r=await post('/chat',{messages:[{role:'user',content:text}],...base});S.busy='';
+  if(r.error)toast(r.error);else{if(r.updatedScript){S.prev=S.script;S.script=r.updatedScript}S.msgs.push(r.reply||'');if(!r.updatedScript)toast('AI ne script nahi badli — apna sawaal clear likho')}drawStudio()}
+async function studioSave(){let r;if(S.kind==='plan')r=await put('/plan/'+S.id,{script:S.script});else{const dirty=S.script.lines.map((l,i)=>l.show!==S.orig[i]?i:-1).filter(i=>i>=0);r=await put(`/reels/${S.id}/script`,{script:S.script,dirty})}
+  if(r.error)return toast(r.error);toast(S.kind==='reel'?'Save hui, video dobara ban rahi hai':'Script save ✓');closeDr()}
 
-/* ---------- calendar: which video went out on which day ---------- */
-const istToday = () => new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
-let cal = { month: '', data: null, sel: '' };
-async function loadCalendar(m) {
-  cal.month = m || cal.month || istToday().slice(0, 7);
-  cal.data = await api('/calendar?month=' + cal.month);
-  if (!cal.sel || cal.sel.slice(0, 7) !== cal.month) cal.sel = cal.month === istToday().slice(0, 7) ? istToday() : cal.month + '-01';
-  drawCalendar();
-}
-function calGo(n) {
-  if (n === 0) { cal.month = ''; cal.sel = ''; return loadCalendar(); }
-  const [y, mo] = cal.month.split('-').map(Number); const d = new Date(Date.UTC(y, mo - 1 + n, 1));
-  cal.sel = ''; loadCalendar(d.toISOString().slice(0, 7));
-}
-const cstat = e => e.status === 'published' ? ['pub', '✔'] : ['approved', 'ready'].includes(e.status) ? ['sch', '◷'] : GEN.includes(e.status) ? ['gen', '⚙'] : ['failed', 'rejected', 'missed'].includes(e.status) ? ['bad', '✖'] : e.status === 'skipped' ? ['skip', '–'] : ['', '○'];
-function drawCalendar() {
-  const { month, days, today } = cal.data; const [y, mo] = month.split('-').map(Number);
-  $('calTitle').textContent = new Date(Date.UTC(y, mo - 1, 1)).toLocaleDateString('en-IN', { month: 'long', year: 'numeric', timeZone: 'UTC' });
-  const all = Object.values(days).flat(); const n = f => all.filter(f).length;
-  $('calSum').innerHTML = `<span class="chip2 live">Published ${n(e => e.status === 'published')}</span><span class="chip2">Scheduled ${n(e => ['approved', 'ready'].includes(e.status))}</span><span class="chip2">Planned ${n(e => e.planned && e.status === 'planned')}</span>${n(e => ['failed', 'rejected'].includes(e.status)) ? `<span class="chip2 err">Failed ${n(e => ['failed', 'rejected'].includes(e.status))}</span>` : ''}`;
-  const first = (new Date(Date.UTC(y, mo - 1, 1)).getUTCDay() + 6) % 7, dim = new Date(Date.UTC(y, mo, 0)).getUTCDate();
-  let h = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => `<div class="dow">${d}</div>`).join('') + '<div class="cell empty"></div>'.repeat(first);
-  for (let d = 1; d <= dim; d++) {
-    const date = `${month}-${String(d).padStart(2, '0')}`, ev = days[date] || [];
-    h += `<div class="cell ${date === today ? 'today' : ''} ${date === cal.sel ? 'sel' : ''}" onclick="calPick('${date}')"><div class="dn">${d}</div>${ev.slice(0, 3).map(e => { const [c, ic] = cstat(e); return `<div class="ce ${c}" title="${esc(e.topic)}">${ic} ${esc(e.time)} ${esc(e.topic)}</div>`; }).join('')}${ev.length > 3 ? `<div class="more">+${ev.length - 3} more</div>` : ''}</div>`;
-  }
-  $('calGrid').innerHTML = h; drawCalDetail();
-}
-function calPick(d) { cal.sel = d; drawCalendar(); }
-function drawCalDetail() {
-  const ev = cal.data.days[cal.sel] || [];
-  const label = { published: 'Published', approved: 'Scheduled', ready: 'Ready (approve karo)', failed: 'Failed', rejected: 'Rejected', missed: 'Missed (not generated)', planned: 'Planned', skipped: 'Skipped' };
-  $('calDetail').innerHTML = `<h3 style="margin:0 0 4px;font-size:15px">${dayLabel(cal.sel)}</h3>` + (ev.length ? ev.map(e => {
-    const [c] = cstat(e); const links = Object.entries(e.platforms).map(([p, v]) => v.url ? `<a class="btn sm" target="_blank" href="${esc(v.url)}">${p === 'youtube' ? 'YouTube' : 'Instagram'} ↗</a>` : `<span class="chip2 ${v.state === 'error' ? 'err' : ''}" title="${esc(v.error || '')}">${p}: ${v.state === 'done' ? 'posted' : v.state}</span>`).join('');
-    return `<div class="drow"><span class="kind ${e.kind}">${e.kind === 'long' ? 'LONG' : 'SHORT'}</span><b>${esc(e.topic)}${e.hook ? `<br><span class="help" style="font-weight:400">${esc(e.hook)}</span>` : ''}</b><span class="chip2">${esc(e.time)} IST</span><span class="chip2 ${c === 'pub' ? 'live' : c === 'bad' ? 'err' : c === 'gen' ? 'work' : ''}">${GEN.includes(e.status) ? 'Generating' : label[e.status] || e.status}</span>${links}${e.purged ? '<span class="chip2" title="Video/audio/images deleted after 24h">files cleaned</span>' : ''}${e.error && c === 'bad' ? `<span class="err" style="flex-basis:100%">${esc(e.error)}</span>` : ''}</div>`;
-  }).join('') : '<div class="sub">Is din koi video nahi.</div>');
-}
+/* ================= AI CO-PILOT ================= */
+const DQ=['10 viral topic do','Mere channel ko engaging kaise banayein?','3 caption options likho'];
+function setCtx(id,kind){ctxId=id;ctxKind=kind||null;let label='';if(id){const r=kind==='plan'?plan.items.find(i=>i._id===id):reels.find(x=>x._id===id)||(plan.items.find(i=>i.reel&&i.reel._id===id)||{}).reel;label=r?(r.topic||''):''}
+  $('ctx').style.display=label?'':'none';$('ctx').textContent=label?label+' ✕':''}
+function aiAbout(id,kind){setCtx(id,kind);toggleAI(true);$('dIn').value='Is reel ka script honestly review karo: hook, flow, kya generic hai? Phir behtar version do.';$('dIn').focus()}
+function clearChat(){chat=[];localStorage.removeItem('chat3');renderChat()}
+function renderChat(){if(!chat.length)chat=[{role:'assistant',content:'Main tumhara co-pilot hoon. Topic, hooks, captions, poora script — kuch bhi maango. Kisi video par ✨ AI dabaoge to main uska script dekh ke sudhaar sakta hoon.'}];
+  $('msgs').innerHTML=chat.map((m,i)=>{let x='';if(m.newScript)x+=`<div class="qa"><button class="btn sm gold" onclick="makeFrom(${i})">Is script se video banao</button></div>`;
+    if(m.updatedScript)x+=`<div class="qa"><button class="btn sm gold" onclick="applyChat(${i})">Apply + re-render</button></div>`;
+    if(m.topics&&m.topics.length)x+=`<div class="qa">${m.topics.map((t,k)=>`<button class="btn sm" onclick="topicToReel(${i},${k})">+ ${esc(t)}</button>`).join('')}</div>`;
+    return m.role==='user'?`<div class="m u"><div class="tx">${esc(m.content)}</div></div>`:`<div class="m"><div class="av">✨</div><div class="tx" style="min-width:0">${esc(m.content)}${x}</div></div>`}).join('');
+  $('msgs').scrollTop=$('msgs').scrollHeight;$('dq').innerHTML=chat.length<3?DQ.map(s=>`<button class="sg" onclick="dockQuick(this.textContent)">${esc(s)}</button>`).join(''):'';
+  localStorage.setItem('chat3',JSON.stringify(chat.filter(m=>m.content!=='…').slice(-40)))}
+function dockQuick(t){$('dIn').value=t;dockSend()}
+function cmdQuick(t){$('cmd').value=t;cmdSend()}
+function cmdSend(){const t=$('cmd').value.trim();if(!t)return;$('cmd').value='';toggleAI(true);$('dIn').value=t;dockSend()}
+async function dockSend(){const t=$('dIn').value.trim();if(!t||$('dBtn').disabled)return;$('dIn').value='';chat.push({role:'user',content:t},{role:'assistant',content:'…'});renderChat();$('dBtn').disabled=true;
+  const body={messages:chat.filter(m=>m.content!=='…').map(({role,content})=>({role,content}))};if(ctxKind==='plan')body.planId=ctxId;else if(ctxId)body.reelId=ctxId;
+  const r=await post('/chat',body);chat.pop();chat.push(r.error?{role:'assistant',content:'Error: '+r.error}:{role:'assistant',content:r.reply,updatedScript:r.updatedScript,newScript:r.newScript,topics:r.topics,reelId:ctxKind==='plan'?null:ctxId});$('dBtn').disabled=false;renderChat()}
+async function applyChat(i){const m=chat[i];if(!m.reelId)return toast('Pehle kisi video par ✨ AI dabao');const r=await put(`/reels/${m.reelId}/script`,{script:m.updatedScript,dirty:[]});if(r.error)return toast(r.error);delete m.updatedScript;renderChat();toast('Apply hui, video dobara ban rahi hai');refresh()}
+async function makeFrom(i){const m=chat[i];const r=await post('/reels/from-script',{topic:m.newScript.hookText,script:m.newScript});if(r.error)return toast(r.error);delete m.newScript;renderChat();toast('Video line mein lag gayi');go('videos')}
+async function topicToReel(i,k){await post('/reels',{topic:chat[i].topics[k]});toast('Video line mein lag gayi');refresh()}
 
-/* ---------- script studio (plan item): generate / paste / read / chat-edit ---------- */
-let studio = null;
-async function openStudio(id) {
-  const it = plan.items.find(x => x._id === id); if (!it) return;
-  studio = { id, kind: it.kind, topic: it.topic, script: it.script ? JSON.parse(JSON.stringify(it.script)) : null, prev: null, tab: 'script', chat: [], busy: '' };
-  $('sheet').className = 'sheet'; drawStudio(); $('modal').classList.add('on');
-}
-function closeStudio() { studio = null; closeModal(); if (view === 'plan') loadPlan(); if (view === 'home') loadHome(); }
-function drawStudio() {
-  const st = studio, s = st.script, long = st.kind === 'long';
-  const head = `<div class="sheet-h"><h3>Script · ${esc(st.topic)} <span class="fmt">${long ? 'LONG' : 'SHORT'}</span></h3><button class="btn icon sm" onclick="closeStudio()">${I.x}</button></div>`;
-  const tabs = `<div class="tabs" style="margin:0 0 14px"><button class="tab ${st.tab === 'script' ? 'on' : ''}" onclick="studio.tab='script';drawStudio()">Script</button><button class="tab ${st.tab === 'paste' ? 'on' : ''}" onclick="studio.tab='paste';drawStudio()">Paste my script</button></div>`;
-  let left;
-  if (st.tab === 'paste') {
-    left = `${tabs}<div class="f"><label>Your script (Hinglish). I keep your words and only add structure, visuals and the verse.${long ? ' For long videos write ~600+ words; separate parts with a blank line.' : ''}</label><textarea id="pasteText" rows="16" placeholder="Raat ke do baje, phone haath mein..."></textarea></div>
-      <button class="btn primary" ${st.busy ? 'disabled' : ''} onclick="studioPaste()">${st.busy || 'Use this script'}</button>`;
-  } else if (!s) {
-    left = `${tabs}<div class="empty" style="padding:40px 0">No script yet.<br><br><button class="btn primary" ${st.busy ? 'disabled' : ''} onclick="studioGenerate()">${st.busy || 'Generate script with AI'}</button></div>`;
-  } else {
-    left = `${tabs}<div class="f"><label>On-screen hook</label><input value="${esc(s.hookText)}" oninput="studio.script.hookText=this.value"></div>
-      ${long ? '' : `<div class="help" style="margin:-6px 0 12px">Verse: ${esc(s.verseId)} (chanted after line ${s.shlokLineIndex + 1})</div>`}
-      ${s.lines.map((l, i) => `<div class="ln" style="padding:8px 10px"><div class="ln-h">${i + 1}${long && s.shloks?.some(x => x.afterLine === i) ? ' · chant after this line' : ''}${!long && i === s.shlokLineIndex ? ' · chant after this line' : ''}</div><textarea rows="2" oninput="studio.script.lines[${i}].show=this.value">${esc(l.show)}</textarea></div>`).join('')}
-      <div class="f"><label>Post caption</label><textarea rows="2" oninput="studio.script.caption=this.value">${esc(s.caption)}</textarea></div>
-      <div class="row"><button class="btn" ${st.busy ? 'disabled' : ''} onclick="studioGenerate()">${st.busy || 'Regenerate'}</button>${st.prev ? '<button class="btn" onclick="studioUndo()">Undo chat change</button>' : ''}</div>`;
-  }
-  const chat = `<div class="box" style="margin:0;display:flex;flex-direction:column;height:100%;min-height:420px"><h4>Ask the assistant to change it</h4>
-    <div id="stChat" style="flex:1;overflow:auto;display:flex;flex-direction:column;gap:12px;margin-bottom:10px">${st.chat.length ? st.chat.map(m => `<div class="msg ${m.role === 'user' ? 'user' : ''}">${m.role === 'user' ? '' : '<div class="av">ॐ</div>'}<div class="txt">${esc(m.content)}</div></div>`).join('') : `<div class="help">${long ? 'Long scripts: ask for ideas or tone changes, then edit lines directly (chat rewrite works for shorts).' : 'e.g. "hook aur strong karo", "thoda emotional banao", "last line mein question daalo", "script chhoti karo".'}</div>`}</div>
-    <div class="box" style="margin:0;padding:8px;display:flex;gap:8px"><textarea id="stInput" rows="2" style="flex:1;resize:none" placeholder="Kya badalna hai?" ${!s || long ? 'disabled' : ''} onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();studioSend()}"></textarea><button class="btn primary" ${!s || long ? 'disabled' : ''} onclick="studioSend()">Send</button></div></div>`;
-  $('sheet').innerHTML = `${head}<div class="sheet-b"><div class="edit" style="grid-template-columns:minmax(0,1.3fr) minmax(0,1fr)"><div>${left}</div>${chat}</div></div>
-   <div class="sheet-f"><span class="help" style="margin-right:auto">${s ? 'Saved scripts are used exactly as shown when the video is made.' : ''}</span><button class="btn" onclick="closeStudio()">Close</button><button class="btn primary" ${s ? '' : 'disabled'} onclick="studioSave()">Save script</button></div>`;
-  const c = $('stChat'); if (c) c.scrollTop = c.scrollHeight;
-}
-async function studioGenerate() { studio.busy = 'Writing script...'; drawStudio(); const r = await post(`/plan/${studio.id}/script`); studio.busy = ''; if (r.error) { alert(r.error); return drawStudio(); } studio.script = r.script; studio.tab = 'script'; studio.chat = []; drawStudio(); }
-async function studioPaste() { const t = $('pasteText').value; studio.busy = 'Structuring...'; drawStudio(); const r = await post(`/plan/${studio.id}/script-from-text`, { text: t }); studio.busy = ''; if (r.error) { alert(r.error); studio.tab = 'paste'; return drawStudio(); } studio.script = r.script; studio.tab = 'script'; drawStudio(); }
-async function studioSend() {
-  const el = $('stInput'), t = el.value.trim(); if (!t) return; await studioSave(true);
-  studio.chat.push({ role: 'user', content: t }, { role: 'assistant', content: '…' }); drawStudio();
-  const r = await post('/chat', { messages: studio.chat.filter(m => m.content !== '…').map(({ role, content }) => ({ role, content })), planId: studio.id });
-  studio.chat.pop();
-  if (r.error) studio.chat.push({ role: 'assistant', content: 'Error: ' + r.error });
-  else { studio.chat.push({ role: 'assistant', content: r.reply + (r.updatedScript ? '\n\n(Script updated on the left. Read it; use "Undo chat change" if you do not like it.)' : '') }); if (r.updatedScript) { studio.prev = studio.script; studio.script = r.updatedScript; } }
-  drawStudio();
-}
-function studioUndo() { studio.script = studio.prev; studio.prev = null; drawStudio(); }
-async function studioSave(quiet) {
-  if (!studio.script) return; const r = await api('/plan/' + studio.id, { method: 'PUT', body: JSON.stringify({ script: studio.script }) });
-  if (r.error) return alert(r.error); if (r.script) studio.script = r.script; if (!quiet) { alert('Script saved'); }
-}
+/* ================= SETTINGS ================= */
+async function loadSettings(){const[st,s2]=await Promise.all([api('/settings'),api('/status')]);if(st.error)return;const ig=s2.integrations||{youtube:{},instagram:{}};
+  const chk=(k,l,h='')=>`<label class="tg"><input type="checkbox" id="s_${k}" ${st[k]?'checked':''}><span><b>${l}</b>${h?`<br><span class="help">${h}</span>`:''}</span></label>`;
+  const inp=(k,l,t='text',x='')=>`<div class="f"><label>${l}</label><input id="s_${k}" type="${t}" ${x} value="${esc(st[k]??'')}"></div>`;
+  $('setBody').innerHTML=`<div class="box"><h4>Roz ka automation</h4><div class="form">${chk('automation','Roz khud videos banao','Set time par aaj ki videos shuru ho jaati hain')}${inp('generateAt','Generation time (IST)','time')}${inp('shorts','Shorts per day','number','min=0 max=10')}${inp('long','Long videos per day','number','min=0 max=3')}
+    <div class="f"><label>Publish times (comma)</label><input id="s_shortSlots" value="${esc((st.shortSlots||[]).join(', '))}"></div>${inp('longSlot','Long video time','time')}${inp('planDays','Kitne din aage plan','number','min=1 max=30')}
+    <div class="f"><label>Reel ki length</label><select id="s_reelLength">${[['auto','Auto 30-60s'],['30','30s'],['45','45s'],['60','60s']].map(([v,l])=>`<option value="${v}" ${v===String(st.reelLength)?'selected':''}>${l}</option>`).join('')}</select></div>${inp('shlokPercent','Kitni % reels mein shlok','number','min=0 max=100')}
+    ${chk('prewriteScripts','Script pehle se likho (00:15)','Home par topic + script ready dikhta hai')}${inp('keepHours','Files delete hon (ghante)','number','min=1 max=168')}${chk('autoApprove','Auto-approve','Off = pehle tum review karoge (recommended)')}</div></div>
+  <div class="box"><h4>Publishing</h4><div class="form">${chk('autoPublish','Time par khud post karo')}<div class="f"><label>YouTube visibility</label><select id="s_youtubePrivacy">${['public','unlisted','private'].map(v=>`<option ${v===st.youtubePrivacy?'selected':''}>${v}</option>`).join('')}</select></div>
+    ${chk('youtube','YouTube upload',ig.youtube.configured?(ig.youtube.connected?'Connected':'Connect nahi hua'):'.env mein YOUTUBE_CLIENT_ID/SECRET daalo')}${chk('instagram','Instagram Reels upload',ig.instagram.configured?'Token mila':'.env mein IG_USER_ID / IG_ACCESS_TOKEN daalo')}</div>
+    ${ig.youtube.configured?`<div style="margin-top:12px"><a class="btn" href="/oauth/youtube" target="_blank">${ig.youtube.connected?'YouTube reconnect':'YouTube connect'}</a></div>`:''}</div>
+  <div class="box"><h4>Voice</h4><p class="help" style="margin-top:0">Abhi: <b>${s2.voice.length?esc(s2.voice[0])+' ('+esc(s2.voiceName[s2.voice[0]]||'')+')':'koi nahi'}</b>. Sabse natural Hindi ke liye Sarvam key daalo.</p><div class="form">
+    <div class="f"><label>Gemini voice (free)</label><select id="s_voiceGemini">${['Charon','Orus','Algenib','Fenrir','Puck','Kore','Zephyr','Achird','Sadaltager','Iapetus','Umbriel','Rasalgethi'].map(v=>`<option ${v===(st.voiceGemini||s2.voiceName.gemini)?'selected':''}>${v}</option>`).join('')}</select></div>${inp('voiceSarvam','Sarvam speaker')}${inp('voiceEleven','ElevenLabs voice id')}</div>
+    <div style="margin-top:12px;display:flex;gap:10px;align-items:center"><button class="btn" id="vt" onclick="testVoice()">Save + voice test</button><span class="help" id="vm"></span></div></div>
+  <button class="btn gold" onclick="saveSettings()">Settings save karo</button>`}
+async function testVoice(){$('vt').disabled=true;$('vm').textContent='Sample ban raha hai…';await put('/settings',{voiceGemini:$('s_voiceGemini').value,voiceSarvam:$('s_voiceSarvam').value.trim(),voiceEleven:$('s_voiceEleven').value.trim()});
+  const r=await fetch('/api/voice/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});$('vt').disabled=false;if(!r.ok){$('vm').textContent='Fail: '+((await r.json()).error||r.status);return}$('vm').textContent='Chal raha hai…';const a=new Audio(URL.createObjectURL(await r.blob()));a.onended=()=>$('vm').textContent='';a.play();loadStatus()}
+async function saveSettings(){const g=k=>$('s_'+k),b={};['automation','prewriteScripts','autoApprove','autoPublish','youtube','instagram'].forEach(k=>b[k]=g(k).checked);['generateAt','longSlot','youtubePrivacy','reelLength'].forEach(k=>b[k]=g(k).value);['shorts','long','planDays','keepHours','shlokPercent'].forEach(k=>b[k]=+g(k).value);['voiceGemini','voiceSarvam','voiceEleven'].forEach(k=>b[k]=g(k).value.trim());b.shortSlots=g('shortSlots').value.split(',').map(s=>s.trim()).filter(Boolean);
+  const r=await put('/settings',b);toast(r.error||'Settings save ho gayi ✓');loadStatus()}
+async function loadStatus(){const s=await api('/status');$('dot').classList.toggle('ok',!s.error&&s.voice&&s.voice.length>0);$('dot').title=s.error?'Server error':`Voice: ${(s.voice||[]).join(', ')||'none'} · Images: ${(s.images||[]).join(', ')||'stock'} · Music: ${s.music}`}
 
-/* ---------- settings ---------- */
-async function loadSettings() {
-  const [st, s2] = await Promise.all([api('/settings'), api('/status')]); const ig = s2.integrations;
-  const chk = (k, label, hint = '') => `<label class="tgl"><input type="checkbox" id="s_${k}" ${st[k] ? 'checked' : ''}><span><b>${label}</b>${hint ? `<br><span class="help">${hint}</span>` : ''}</span></label>`;
-  $('setBody').innerHTML = `
-  <div class="box"><h4>Daily automation</h4><div class="form">
-    ${chk('automation', 'Generate daily plan automatically', 'Videos for today start at the time below.')}
-    <div class="f"><label>Generation starts (IST)</label><input type="time" id="s_generateAt" value="${esc(st.generateAt)}"></div>
-    <div class="f"><label>Shorts per day</label><input type="number" min="0" max="10" id="s_shorts" value="${st.shorts}"></div>
-    <div class="f"><label>Long videos (~5 min) per day</label><input type="number" min="0" max="3" id="s_long" value="${st.long}"></div>
-    <div class="f"><label>Short publish times (IST, comma separated)</label><input id="s_shortSlots" value="${esc(st.shortSlots.join(', '))}"></div>
-    <div class="f"><label>Long video publish time (IST)</label><input type="time" id="s_longSlot" value="${esc(st.longSlot)}"></div>
-    <div class="f"><label>Days planned ahead</label><input type="number" min="1" max="30" id="s_planDays" value="${st.planDays}"></div>
-    ${chk('prewriteScripts', 'Write today\'s scripts at 00:15', 'Home page par aaj ka topic + script pehle se ready dikhta hai, tum padh ke badal sakte ho.')}
-    <div class="f"><label>Delete ALL files of a video (images, audio, video) after N hours</label><input type="number" min="1" max="168" id="s_keepHours" value="${st.keepHours}"></div>
-    ${chk('autoApprove', 'Auto-approve finished videos', 'Off = you review each video first (recommended for monetization). Approving deletes the temp files.')}
-  </div></div>
-  <div class="box"><h4>Publishing</h4><div class="form">
-    ${chk('autoPublish', 'Auto-publish approved videos at their time')}
-    <div class="f"><label>YouTube visibility</label><select id="s_youtubePrivacy">${['public', 'unlisted', 'private'].map(v => `<option ${v === st.youtubePrivacy ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
-    ${chk('youtube', 'Upload to YouTube', ig.youtube.configured ? (ig.youtube.connected ? 'Connected' : 'Not connected yet') : 'Add YOUTUBE_CLIENT_ID / SECRET to .env')}
-    ${chk('instagram', 'Upload shorts to Instagram Reels', ig.instagram.configured ? 'Token found' : 'Add IG_USER_ID / IG_ACCESS_TOKEN to .env')}
-  </div>
-  <div class="row" style="margin-top:14px">${ig.youtube.configured ? `<a class="btn" href="/oauth/youtube" target="_blank">${ig.youtube.connected ? 'Reconnect YouTube' : 'Connect YouTube'}</a>` : ''}</div>
-  <p class="help">YouTube: new API projects can only upload private videos until Google's API audit is passed. Instagram Reels must be 9:16 up to 90 s, so long videos go to YouTube only.</p></div>
-  <div class="box"><h4>Voice</h4>
-    <p class="help" style="margin-top:0">Active now: <b>${s2.voice.length ? esc(s2.voice[0]) + ' (' + esc(s2.voiceName[s2.voice[0]] || '') + ')' : 'none'}</b>. Order: Sarvam, ElevenLabs, Google (paid, only if their key is in .env) then Gemini (free, commercial use allowed). No robotic fallback voice is used.</p>
-    <div class="form">
-      <div class="f"><label>Gemini voice (free)</label><select id="s_voiceGemini">${['Charon', 'Orus', 'Algenib', 'Fenrir', 'Puck', 'Kore', 'Zephyr', 'Achird', 'Sadaltager', 'Iapetus', 'Umbriel', 'Rasalgethi'].map(v => `<option ${v === (st.voiceGemini || s2.voiceName.gemini) ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
-      <div class="f"><label>Sarvam speaker (paid)</label><input id="s_voiceSarvam" value="${esc(st.voiceSarvam || '')}" placeholder="${esc(s2.voiceName.sarvam || 'shubh')}"></div>
-      <div class="f"><label>ElevenLabs voice id (paid)</label><input id="s_voiceEleven" value="${esc(st.voiceEleven || '')}" placeholder="from your ElevenLabs voice library"></div>
-    </div>
-    <div class="row" style="margin-top:12px"><button class="btn" id="vtBtn" onclick="testVoice()">Save and test voice</button><span class="help" id="vtMsg"></span></div></div>
-  <button class="btn primary" onclick="saveSettings()">Save settings</button>`;
-}
-async function testVoice() {
-  $('vtBtn').disabled = true; $('vtMsg').textContent = 'Generating sample...';
-  await api('/settings', { method: 'PUT', body: JSON.stringify({ voiceGemini: $('s_voiceGemini').value, voiceSarvam: $('s_voiceSarvam').value.trim(), voiceEleven: $('s_voiceEleven').value.trim() }) });
-  const r = await fetch('/api/voice/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-  $('vtBtn').disabled = false;
-  if (!r.ok) { $('vtMsg').textContent = 'Failed: ' + ((await r.json()).error || r.status); return; }
-  $('vtMsg').textContent = 'Playing...'; const a = new Audio(URL.createObjectURL(await r.blob())); a.onended = () => $('vtMsg').textContent = ''; a.play(); loadStatus();
-}
-async function saveSettings() {
-  const g = k => $('s_' + k), body = {};
-  ['automation', 'prewriteScripts', 'autoApprove', 'autoPublish', 'youtube', 'instagram'].forEach(k => body[k] = g(k).checked);
-  ['generateAt', 'longSlot', 'youtubePrivacy'].forEach(k => body[k] = g(k).value);
-  ['shorts', 'long', 'planDays', 'keepHours'].forEach(k => body[k] = +g(k).value);
-  ['voiceGemini', 'voiceSarvam', 'voiceEleven'].forEach(k => body[k] = g(k).value.trim());
-  body.shortSlots = g('shortSlots').value.split(',').map(s => s.trim()).filter(Boolean);
-  const r = await api('/settings', { method: 'PUT', body: JSON.stringify(body) }); if (r.error) return alert(r.error);
-  alert('Saved'); loadStatus();
-}
-
-if (localStorage.getItem('chatOn')) $('shell').classList.add('chat-on');
-renderChat(); loadStatus(); load(); loadHome();
+/* boot */
+if(localStorage.getItem('aiOn'))toggleAI(true);
+renderChat();loadStatus();api('/formats').then(f=>{formats=f;loadToday()});
 </script>
 </body>
 </html>

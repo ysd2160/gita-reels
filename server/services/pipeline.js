@@ -3,7 +3,8 @@ import path from 'node:path';
 import { config } from '../config.js';
 import { Reel } from '../models.js';
 import { verseById } from '../verses.js';
-import { ensureVoiceText, generateLongScript, generateScript } from './gemini.js';
+import { ensureVoiceText, generateLongScript } from './gemini.js';
+import { writeShortScript } from './scriptContext.js';
 import { buildVoice } from './voice.js';
 import { ART_STYLES, buildPrompt, generateImage, imageProvidersAvailable, mapLimit } from './images.js';
 import { findLocal, findStock } from './visuals.js';
@@ -112,7 +113,7 @@ export async function prepareReel(id) {
       const recent = (await Reel.find({ script: { $ne: null }, format }).sort({ createdAt: -1 }).limit(15).select('script'))
         .map((r) => r.script?.hookText || r.script?.title).filter(Boolean);
       log(format === 'long' ? 'long script (outline + parts)...' : 'script (2-pass)...');
-      await set(reel, { script: format === 'long' ? await generateLongScript(reel.topic, recent) : await generateScript(reel.topic, recent), progress: 12 });
+      await set(reel, { script: format === 'long' ? await generateLongScript(reel.topic, recent) : await writeShortScript({ topic: reel.topic, formatId: reel.formatId, targetSec: reel.targetSec, notes: reel.notes }), progress: 12 });
     }
     const script = { ...reel.script, format };
     // creators write Hinglish only; the narrator gets Hindi-in-Devanagari + English-in-Latin (much more natural for TTS)
@@ -122,7 +123,8 @@ export async function prepareReel(id) {
     await fs.rm(audioDir(id), { recursive: true, force: true });
     log('voice...');
     const voice = await buildVoice(script, audioDir(id));
-    log(`voice ok via ${voice.provider}${voice.chanted ? ' + chants' : ''}, ${voice.durationSec}s`);
+    log(`voice ok via ${voice.provider}${voice.chanted ? ' + chants' : ''}, ${voice.durationSec}s (${script.formatId || 'classic'}${script.verseId ? '' : ', no shlok'})`);
+    if (format === 'short' && (voice.durationSec > 61 || voice.durationSec < 25)) log(`WARNING: ${voice.durationSec}s is outside the 30-60 s target. Edit the script (shorter/longer) and press New look.`);
 
     await set(reel, { status: 'visuals', progress: 38, durationSec: voice.durationSec });
     const style = reel.style?.artStyle ? reel.style : pickStyle((await Reel.findOne({ _id: { $ne: id }, style: { $ne: null } }).sort({ createdAt: -1 }))?.style);

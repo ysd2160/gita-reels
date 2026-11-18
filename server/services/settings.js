@@ -8,6 +8,8 @@ export const DEFAULTS = {
   shortSlots: ['07:30', '13:00', '20:30'], // IST publish times for the shorts
   longSlot: '18:00',
   planDays: 7,
+  reelLength: 'auto', // auto | 30 | 45 | 60 (seconds) - target length of every short
+  shlokPercent: 45, // % of shorts that contain a chanted shlok; the rest are story / mystery / deep-truth reels
   prewriteScripts: true, // write today's scripts in advance so the Home page shows them
   keepHours: 24, // all files (images, audio, video) of a reel are deleted this many hours after generation
   autoApprove: true, // true = ready videos are approved automatically (set false to review each video first)

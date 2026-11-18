@@ -25,6 +25,9 @@ const reelSchema = new Schema(
     genAt: Date, // when the video finished rendering (start of the 24h file-retention clock)
     purgedAt: Date, // all files were deleted by the storage keeper (record + post links stay)
     retries: { type: Number, default: 0 }, // automatic re-tries after a failed generation
+    formatId: String, // reel format (classic / story / mystery ...), see server/formats.js
+    targetSec: Number, // wanted length 30-60 s
+    notes: String, // creator's notes for the script
   },
   { timestamps: true },
 );
@@ -45,6 +48,10 @@ const planSchema = new Schema(
     status: { type: String, enum: ['planned', 'generating', 'done', 'skipped'], default: 'planned' },
     reelId: Schema.Types.ObjectId,
     script: Schema.Types.Mixed, // reviewed / pasted script; used as-is when the video is made
+    formatId: String, // reel format id (server/formats.js); empty = chosen automatically
+    targetSec: Number, // wanted length in seconds (30-60); empty = automatic
+    notes: String, // creator's notes / angle for this video (from the week plan)
+    sourceText: String, // full script text found in an imported plan (kept word for word)
   },
   { timestamps: true },
 );

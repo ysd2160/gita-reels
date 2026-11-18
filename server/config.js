@@ -20,7 +20,12 @@ export const config = {
   youtube: { clientId: env.YOUTUBE_CLIENT_ID || '', clientSecret: env.YOUTUBE_CLIENT_SECRET || '' },
   instagram: { userId: env.IG_USER_ID || '', token: env.IG_ACCESS_TOKEN || '' },
 
-  gemini: { key: env.GEMINI_API_KEY || '', model: env.GEMINI_MODEL || 'gemini-3.5-flash-lite' },
+  gemini: {
+    key: env.GEMINI_API_KEY || '',
+    model: env.GEMINI_MODEL || 'gemini-3.5-flash-lite',
+    // optional stronger model used ONLY for writing scripts (quality matters most there); empty = same as GEMINI_MODEL
+    scriptModel: env.GEMINI_SCRIPT_MODEL || '',
+  },
 
   // ---- voice: providers are tried in this order; ones without a key are skipped ----
   // free + commercial-safe: gemini | paid (leave keys empty until you have them): sarvam, elevenlabs, google
@@ -76,7 +81,7 @@ export const config = {
 
   queue: { prep: num(env.PREP_CONCURRENCY, 2) },
   render: {
-    concurrency: num(env.RENDER_CONCURRENCY, Math.max(2, Math.floor(os.cpus().length / 2))),
+    concurrency: num(env.RENDER_CONCURRENCY, Math.max(1, Math.floor(os.cpus().length / 3))),
     preset: env.X264_PRESET || 'veryfast',
     crf: num(env.RENDER_CRF, 22),
   },
