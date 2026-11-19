@@ -58,3 +58,28 @@ Audio, AI images, uploads and music of a video stay until you **approve** it (so
 - **Daily plan:** 3 shorts (YouTube + Instagram) and 1 long video (~5 min, YouTube only). Settings -> "Long videos per day" must be 1 (it is a saved setting; the default only applies if you never saved it).
 - **One video at a time:** the queue runs script -> voice -> images -> music -> render for one video, then the next.
 - **Pause / Resume:** "Roko" stops a video and keeps its finished steps (script, voice, every finished image). "Resume" continues from that step. A render that is paused restarts from frame 0, everything before it is kept. "Abhi chalao" pauses the running video and starts this one now. The same saved steps are used after a crash or server restart.
+
+
+## Stories only (no shlok), uploads page, weekly plan format
+
+- **Every video is a story** (a named character, trouble, a turn, a result), 30-60 s for reels and one ~5 min story in 5 chapters for the long video. Formats: Aaj ki kahani, Mahabharat ki kahani, Arjun-Krishna ki baat, Ant mein twist, Raaz ki kahani. Shlok / chant is switched off everywhere (no verse is ever attached, the script check rejects the words shlok / verse / Sanskrit). Old saved plans with old format ids are mapped to a story format automatically.
+- **Uploads page:** every finished video with its status per platform (YouTube / Instagram): done, uploading, pending, waiting for approval, error (with the error text and a "Dobara upload karo" button), or "not going there" (long video never goes to Instagram). Cards on the Today / Videos pages show the same YT / Insta chips.
+- **Daily plan:** 3 reels (YouTube + Instagram) + 1 long video (YouTube only). The daily cap is at least 4, even if an old `.env` still says `MAX_PER_DAY=3`.
+- **Weekly plan from outside (text / PDF / photo):** write one block per day, one line per video:
+
+```
+Din 1
+Reel: topic | kahani ka type (optional) | note: ... (optional)
+Reel: topic
+Reel: topic
+LONG: topic of the 5-minute video (YouTube only)
+SCRIPT: (optional) paste your own full script under a topic, it is used word for word
+```
+  The template can be copied / downloaded from Plan -> "Plan ka format kaisa hona chahiye?". Any other layout also works, the AI reads it.
+
+
+## Long video: voice in parts, low-memory render
+
+- **Voice** of a long script is made in parts of ~1300 characters (cut at chapter starts); every part is cached, so a retry / resume never pays for finished parts again.
+- **Render** of the 5-minute video uses ONE browser tab and 1280x720 by default (`RENDER_CONCURRENCY_LONG`, `LONG_RENDER_SCALE` in `.env`). If the PC still runs out of memory, the render is automatically retried with lighter settings (960x540, one thread, no parallel encoding). Reels keep 1080x1920 and also get a low-memory second try.
+- If Windows still says "memory allocation failed": close Chrome / other heavy apps, and set Windows virtual memory (pagefile) to "System managed size".

@@ -24,7 +24,8 @@ async function cloudflare(prompt, key) {
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ prompt, steps: 6 }),
   });
-  if (!r.ok) throw Object.assign(new Error(`Cloudflare ${r.status}: ${(await r.text()).slice(0, 160)}`), { status: r.status });
+  // 404 / 400 = this account id or token is wrong -> treat like a bad key (skip it for hours, use the next key)
+  if (!r.ok) throw Object.assign(new Error(`Cloudflare ${r.status}: ${(await r.text()).slice(0, 160)}`), { status: r.status === 404 || r.status === 400 ? 401 : r.status });
   const j = await r.json();
   const b64 = j.result?.image || j.image;
   if (!b64) throw new Error('Cloudflare: image missing');

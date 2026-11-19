@@ -25,6 +25,34 @@ export async function integrationStatus() {
   };
 }
 
+/**
+ * Where does this video go, and what happened? One entry per platform:
+ * state = done | uploading | pending | waiting | error | off | na   (na = this video never goes there)
+ * Shorts go to YouTube AND Instagram; the long video goes to YouTube only.
+ */
+export function platformStatus(reel, st, integ) {
+  const pub = reel.publish || {};
+  const one = (name, label) => {
+    const p = pub[name];
+    if (name === 'instagram' && reel.format === 'long') return { name, label, state: 'na', text: 'Long video sirf YouTube par jaati hai' };
+    if (p?.state === 'done') return { name, label, state: 'done', url: p.url || '', at: p.at, text: p.scheduled ? 'YouTube par schedule ho gayi, time par public hogi' : 'Upload ho gayi' };
+    if (p?.state === 'error') {
+      const retry = st.autoPublish && (p.tries || 0) < 5 ? '10 min baad khud dobara try hoga' : '"Dobara upload karo" dabao';
+      return { name, label, state: 'error', error: p.error || '', tries: p.tries || 1, at: p.at, text: `Upload fail (${p.tries || 1} baar). ${retry}` };
+    }
+    const enabled = name === 'youtube' ? st.youtube : st.instagram;
+    const i = integ[name] || {};
+    if (!enabled) return { name, label, state: 'off', text: 'Settings mein band hai' };
+    if (!i.configured) return { name, label, state: 'off', text: name === 'youtube' ? 'YouTube keys .env mein nahi hain' : 'Instagram token .env mein nahi hai' };
+    if (name === 'youtube' && !i.connected) return { name, label, state: 'off', text: 'YouTube connect nahi hua (Settings -> YouTube connect)' };
+    if (pub.busy) return { name, label, state: 'uploading', text: 'Upload ho rahi hai...' };
+    if (reel.status === 'approved') return { name, label, state: 'pending', text: st.autoPublish ? 'Time par khud upload hogi' : 'Auto-post band hai, "Abhi post karo" dabao' };
+    if (reel.status === 'ready') return { name, label, state: 'waiting', text: 'Approve karoge tab upload hogi' };
+    return { name, label, state: 'waiting', text: 'Video abhi ban rahi hai' };
+  };
+  return { youtube: one('youtube', 'YouTube'), instagram: one('instagram', 'Instagram') };
+}
+
 /** Upload one reel to every enabled + configured platform. Returns the new publish state. */
 export async function publishReel(id, { now = false } = {}) {
   const reel = await Reel.findById(id);

@@ -98,6 +98,11 @@ details.imp summary{cursor:pointer;color:var(--mute);padding:6px 0}
 .dr .bb{flex:1;overflow:auto;padding:20px 22px}.dr .ff{padding:14px 22px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end;align-items:center}
 .ln{display:grid;grid-template-columns:26px 1fr;gap:8px;margin-bottom:8px;align-items:start}.ln .n{color:var(--dim);font-size:12px;padding-top:11px;text-align:right}.ln.chant textarea{border-color:rgba(240,180,76,.5)}
 .aiq{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 14px}
+.up{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr) minmax(0,1fr);gap:16px;background:var(--s1);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:10px;align-items:start}
+.up.bad{border-color:rgba(239,106,106,.55)}.pl{display:flex;flex-direction:column;gap:6px}.plh{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.banner{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--s1);border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin-bottom:18px}.banner.warn{border-color:rgba(240,180,76,.6);background:rgba(240,180,76,.07)}
+pre.tpl{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:12px;white-space:pre-wrap;font-size:12.5px;color:var(--mute);margin:8px 0}
+@media(max-width:1100px){.up{grid-template-columns:1fr}}
 #toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);display:flex;flex-direction:column;gap:8px;z-index:99;align-items:center}
 .ts{background:var(--s3);border:1px solid var(--line);padding:10px 16px;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
 .empty{text-align:center;color:var(--mute);padding:60px 0;border:1px dashed var(--line);border-radius:16px}
@@ -111,6 +116,7 @@ details.imp summary{cursor:pointer;color:var(--mute);padding:6px 0}
     <button class="nb on" data-v="today" onclick="go('today')"><svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7M5 10v10h14V10"/></svg>Aaj</button>
     <button class="nb" data-v="videos" onclick="go('videos')"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="7" height="16" rx="2"/><rect x="14" y="4" width="7" height="16" rx="2"/></svg>Videos</button>
     <button class="nb" data-v="plan" onclick="go('plan')"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Plan</button>
+    <button class="nb" data-v="uploads" onclick="go('uploads')"><svg viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></svg>Uploads</button>
     <button class="nb" data-v="settings" onclick="go('settings')"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg>Settings</button>
     <button class="nb ai" id="aiBtn" onclick="toggleAI()"><svg viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM18 16l.8 2.2L21 19l-2.2.8L18 22l-.8-2.2L15 19l2.2-.8z"/></svg>AI</button>
     <div class="dotst" id="dot" title="Engine"></div>
@@ -123,6 +129,7 @@ details.imp summary{cursor:pointer;color:var(--mute);padding:6px 0}
         <button class="btn gold" id="tGen" onclick="genAll()">Sab videos banao</button></div>
       <div class="cmd"><span class="spark">✨</span><input id="cmd" placeholder="AI se kuch bhi bolo: &quot;aaj ke liye 3 naye topic do&quot;, &quot;breakup pe reel ka script likho&quot;…" onkeydown="if(event.key==='Enter')cmdSend()"><button class="btn ai" onclick="cmdSend()">Bhejo</button></div>
       <div class="sugs" id="sugs"></div>
+      <div id="planBanner"></div>
       <div class="prog" id="prog"></div>
       <div id="tList"></div>
       <div class="help" id="tNote" style="margin-top:14px"></div>
@@ -137,15 +144,26 @@ details.imp summary{cursor:pointer;color:var(--mute);padding:6px 0}
     <section id="v-plan" class="wrap" style="display:none">
       <div class="hd"><div><h1>Plan</h1><div class="sub" id="pSub"></div></div><div class="grow"></div>
         <div class="tabs" style="margin:0"><button class="tab on" id="pt-list" onclick="planTab('list')">List</button><button class="tab" id="pt-cal" onclick="planTab('cal')">Calendar</button></div></div>
+      <div id="planBanner2"></div>
       <div id="p-list">
         <div class="box"><details class="imp"><summary><b>✨ AI se week plan banao ya PDF / text se import karo</b></summary>
-          <div class="f" style="margin-top:12px"><label>Instruction (optional)</label><input id="wkBrief" placeholder="e.g. is hafte anger aur karma par, 2 reels bina shlok ke"></div>
+          <details class="imp" style="margin:10px 0"><summary>📋 <b>Plan ka format kaisa hona chahiye?</b> (example + template)</summary>
+          <div class="help" style="margin:8px 0">Koi bhi format chalega (text, PDF, photo), AI padh leta hai. Sabse saaf ye hai:</div>
+          <pre class="tpl" id="tplBox"></pre>
+          <div class="help" style="line-height:1.7">• Har din ka alag block: <b>Din 1</b>, <b>Din 2</b> (ya Monday / Somvar / date 2026-11-24).<br>• Reel ki line: <b>Reel: topic | kahani ka type | note</b>. Type aur note optional hain, khaali chhodo to AI khud chunega.<br>• 5-min video ke liye line <b>LONG:</b> se shuru karo (ye sirf YouTube par jayegi). Reels YouTube + Instagram dono par.<br>• Type: Aaj ki kahani · Mahabharat ki kahani · Arjun–Krishna ki baat · Ant mein twist · Raaz ki kahani.<br>• Apni poori script ho to topic ke neeche <b>SCRIPT:</b> likh ke paste karo, wo word-for-word use hogi.<br>• Roz maximum 3 reels + 1 long.</div>
+          <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="btn sm" onclick="tplCopy()">Copy karo</button><button class="btn sm" onclick="tplDownload()">Template download (.txt)</button><button class="btn sm ai" onclick="tplFill()">Neeche box mein daalo</button></div></details>
+          <div class="f" style="margin-top:12px"><label>Instruction (optional)</label><input id="wkBrief" placeholder="e.g. is hafte anger aur karma par kahaniyan"></div>
           <div class="f" style="margin-top:10px"><label>Apna plan paste karo</label><textarea id="wkText" rows="4"></textarea></div>
           <div class="form" style="margin-top:10px"><div class="f"><label>PDF / photo / txt</label><input type="file" id="wkFile"></div><div class="f"><label>Shuru kis din se</label><input type="date" id="wkStart"></div></div>
           <div style="display:flex;gap:8px;margin-top:12px;align-items:center;flex-wrap:wrap"><button class="btn ai" id="wkAI" onclick="weekAI()">✨ AI se poora week</button><button class="btn" id="wkImp" onclick="weekImport()">Import karo</button><span class="help" id="wkMsg"></span></div></details></div>
         <div id="pBody"></div></div>
       <div id="p-cal" style="display:none"><div style="display:flex;gap:8px;align-items:center;margin-bottom:12px"><button class="btn sm" onclick="calGo(-1)">‹</button><b id="calT" style="min-width:150px;text-align:center"></b><button class="btn sm" onclick="calGo(1)">›</button><button class="btn sm" onclick="calGo(0)">Aaj</button></div>
         <div class="cal" id="calG"></div><div id="calD" style="margin-top:16px"></div></div>
+    </section>
+
+    <section id="v-uploads" class="wrap" style="display:none">
+      <div class="hd"><div><h1>Uploads</h1><div class="sub">Kaunsi video kahan gayi, kaunsi baaki hai, kahan error aaya</div></div><div class="grow"></div><button class="btn" onclick="loadUploads()">↻ Refresh</button></div>
+      <div class="prog" id="upSum"></div><div id="upList"></div>
     </section>
 
     <section id="v-settings" class="wrap" style="display:none"><div class="hd"><div><h1>Settings</h1><div class="sub">Automation, publishing, voice</div></div></div><div id="setBody"></div></section>
@@ -169,6 +187,9 @@ const post=(p,b)=>api(p,{method:'POST',body:JSON.stringify(b||{})});
 const put=(p,b)=>api(p,{method:'PUT',body:JSON.stringify(b||{})});
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const clean=t=>String(t||'').replace(/\*/g,'');
+const PS={done:['✓','g','Ho gayi'],uploading:['⏳','y','Ho rahi'],pending:['⏳','y','Jaane wali'],waiting:['…','','Baaki'],error:['✕','r','Error'],off:['—','','Band'],na:['—','','Nahi jayegi']};
+const platChips=r=>{if(!r||!r.platforms||!['ready','approved','published'].includes(r.status))return'';return['youtube','instagram'].map(k=>r.platforms[k]).filter(p=>p&&p.state!=='na').map(p=>`<span class="chip ${PS[p.state][1]}" title="${esc(p.text)}">${p.name==='youtube'?'YouTube':'Insta'} ${PS[p.state][0]}</span>`).join('')};
+const platErr=r=>{const p=r&&r.platforms?Object.values(r.platforms).find(x=>x.state==='error'):null;return p?`${p.label}: ${p.error||p.text}`:''};
 const GEN=['queued','scripting','voice','visuals','render_wait','rendering'];
 const PST={queued:'Shuruaat',scripting:'Script',voice:'Voice',visuals:'Images',render_wait:'Render'};
 const STEP={paused:'Roka hua',queued:'Line mein',scripting:'Script likh raha hai',voice:'Voice bana raha hai',visuals:'Images bana raha hai',render_wait:'Render ka wait',rendering:'Video render ho rahi hai'};
@@ -190,22 +211,22 @@ function patch(host,items,key,html){
 }
 
 /* ---- nav ---- */
-function go(v){view=v;['today','videos','plan','settings'].forEach(k=>$('v-'+k).style.display=k===v?'':'none');document.querySelectorAll('.nb[data-v]').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
-  ({today:loadToday,videos:loadVideos,plan:loadPlan,settings:loadSettings})[v]()}
+function go(v){view=v;['today','videos','plan','uploads','settings'].forEach(k=>$('v-'+k).style.display=k===v?'':'none');document.querySelectorAll('.nb[data-v]').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
+  ({today:loadToday,videos:loadVideos,plan:loadPlan,uploads:loadUploads,settings:loadSettings})[v]()}
 function toggleAI(force){const on=force??!$('app').classList.contains('ai-on');$('app').classList.toggle('ai-on',on);$('aiBtn').classList.toggle('on',on);localStorage.setItem('aiOn',on?'1':'');if(on)setTimeout(()=>$('dIn').focus(),250)}
 const dayLabel=d=>new Date(d+'T00:00:00').toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'short'});
-const estSec=s=>Math.round((s.lines||[]).reduce((n,l)=>n+clean(l.show).split(/\s+/).filter(Boolean).length,0)/2.4+2+(s.verseId?12.5:0));
+const estSec=s=>Math.round((s.lines||[]).reduce((n,l)=>n+clean(l.show).split(/\s+/).filter(Boolean).length,0)/2.4+2);
 const fmtName=id=>(formats.find(f=>f.id===id)||{}).label||'';
 
 /* ================= TODAY ================= */
 const qpos=id=>{const q=plan.queue||{};return q.running===id?0:((q.waiting||[]).indexOf(id)+1)};
 const NEXT=i=>{const r=i.reel,rs=r?r.status:'';
-  if(i.status==='skipped')return['skip'];if(rs==='paused')return['paused'];if(GEN.includes(rs))return['busy'];if(rs==='published')return['done'];if(rs==='approved')return['sched'];if(rs==='ready')return['review'];if(rs==='failed')return['failed'];
+  if(i.status==='skipped')return['skip'];if(rs==='paused')return['paused'];if(rs==='approved'&&platErr(r))return['uploaderr'];if(GEN.includes(rs))return['busy'];if(rs==='published')return['done'];if(rs==='approved')return['sched'];if(rs==='ready')return['review'];if(rs==='failed')return['failed'];
   return[i.script?'make':'script']};
 function vcard(i){
   const r=i.reel,s=i.script,[st]=NEXT(i),long=i.kind==='long';
   const pos=r?qpos(r._id):0,rid=r?r._id:'';
-  const label={skip:['Skip','chip'],paused:[`Roka hua · ${PST[r&&r.pausedStage]||''} se resume hogi`,'chip y'],busy:[(r&&r.status==='queued'&&pos>0)?`Line mein #${pos}`:(STEP[r&&r.status]||'Chal raha hai'),'chip y'],done:['Post ho gayi ✓','chip g'],sched:['Approved · time par post hogi','chip g'],review:['Dekh ke approve karo','chip y'],failed:['Fail hui','chip r'],make:['Script ready','chip p'],script:['Script baaki','chip']}[st];
+  const label={skip:['Skip','chip'],uploaderr:['Upload mein error','chip r'],paused:[`Roka hua · ${PST[r&&r.pausedStage]||''} se resume hogi`,'chip y'],busy:[(r&&r.status==='queued'&&pos>0)?`Line mein #${pos}`:(STEP[r&&r.status]||'Chal raha hai'),'chip y'],done:['Post ho gayi ✓','chip g'],sched:['Approved · time par post hogi','chip g'],review:['Dekh ke approve karo','chip y'],failed:['Fail hui','chip r'],make:['Script ready','chip p'],script:['Script baaki','chip']}[st];
   const ph=r&&r.status==='paused'?`<div class="ph empty"><div class="ring"><div class="num">${r.progress||0}%</div>⏸ roka hua</div></div>`:r&&r.videoFile&&!GEN.includes(r.status)?`<div class="ph"><video controls playsinline preload="metadata" src="/media/videos/${r.videoFile}?v=${new Date(r.updatedAt).getTime()}"></video></div>`
     :GEN.includes(r&&r.status)?`<div class="ph empty"><div class="ring"><div class="num">${r.progress||0}%</div>${esc(STEP[r.status]||'')}</div></div>`
     :`<div class="ph empty"><div class="ring">${s?'Video<br>baaki':'Script<br>baaki'}</div></div>`;
@@ -215,6 +236,7 @@ function vcard(i){
   const primary={script:`<button class="btn ai" onclick="openStudio('${i._id}',true)">✨ AI se script likho</button>`,
     make:`<button class="btn gold" onclick="runItem('${i._id}')">Video banao</button><button class="btn ai" onclick="openStudio('${i._id}')">✨ Script sudharo</button>`,
     review:`<button class="btn green" onclick="act('${r&&r._id}','approve')">✓ Approve</button>${r&&r.editable?`<a class="btn" href="/editor.html?id=${r._id}">Edit video</a>`:''}<button class="btn ai" onclick="aiAbout('${r&&r._id}','reel')">✨ AI feedback</button>`,
+    uploaderr:`<button class="btn gold" onclick="retryUp('${rid}',this)">Dobara upload karo</button>`,
     sched:`${r&&r.editable?`<a class="btn" href="/editor.html?id=${r._id}">Edit video</a>`:''}<button class="btn" onclick="pubNow('${r&&r._id}',this)">Abhi post karo</button>`,
     done:['youtube','instagram'].filter(p=>r.publish&&r.publish[p]&&r.publish[p].url).map(p=>`<a class="btn" target="_blank" href="${esc(r.publish[p].url)}">${p==='youtube'?'YouTube':'Instagram'} ↗</a>`).join(''),
     failed:`<button class="btn gold" onclick="act('${r&&r._id}','regenerate','?mode=script')">Dobara try</button>`,busy:`<button class="btn" onclick="pauseVid('${rid}')">⏸ Roko</button>${r&&r.status==='queued'&&pos>0?`<button class="btn" onclick="resumeVid('${rid}',1)">▶ Abhi shuru</button>`:''}`,
@@ -225,10 +247,10 @@ function vcard(i){
     ${r&&r.videoFile&&!GEN.includes(r.status)?`<a href="/media/videos/${r.videoFile}" download="${esc(i.topic)}.mp4">Download</a><button onclick="act('${r._id}','regenerate','?mode=render')">Naya look (same script)</button><button onclick="act('${r._id}','regenerate','?mode=script')">Naya script + video</button>`:''}
     ${r&&r.script?`<button onclick="copyCap('${r._id}')">Caption copy</button>`:''}</div></details>`;
   return `<div class="vc"><div>${ph}</div><div class="vb">
-    <div class="vt"><span class="${label[1]}">${label[0]}</span>${long?'<span class="chip p">LONG · sirf YouTube</span>':''}${s&&fmtName(s.formatId)?`<span class="chip">${esc(fmtName(s.formatId))}</span>`:''}${s&&!long?`<span class="chip ${est<28||est>62?'r':''}">${s.verseId?'Shlok ✓':'No shlok'} · ~${est}s</span>`:''}<span class="chip">⏰ ${esc(i.publishTime||'')}</span></div>
+    <div class="vt"><span class="${label[1]}">${label[0]}</span>${long?'<span class="chip p">LONG · sirf YouTube</span>':''}${s&&fmtName(s.formatId)?`<span class="chip">${esc(fmtName(s.formatId))}</span>`:''}${s&&!long?`<span class="chip ${est<28||est>62?'r':''}">~${est}s</span>`:''}<span class="chip">⏰ ${esc(i.publishTime||'')}</span>${platChips(r)}</div>
     ${hook?`<div class="vh">${esc(hook)}</div><div class="vtopic">${esc(i.topic)}</div>`:`<div class="vh">${esc(i.topic)}</div>`}
     ${GEN.includes(r&&r.status)||st==='paused'?`<div class="bar"><i style="width:${r.progress||2}%"></i></div>`:`<div class="vs">${esc(body)}</div>`}
-    ${st==='failed'&&r.error?`<div class="err">${esc(r.error)}</div>`:''}
+    ${st==='failed'&&r.error?`<div class="err">${esc(r.error)}</div>`:''}${st==='uploaderr'?`<div class="err">${esc(platErr(r))}</div>`:''}
     <div class="va">${primary}<div class="grow"></div>${menu}</div></div></div>`;
 }
 async function loadToday(){
@@ -242,8 +264,9 @@ async function loadToday(){
   $('tScripts').style.display=open.some(i=>!i.script&&!i.scriptBusy)?'':'none';
   if(!items.length)$('tList').innerHTML='<div class="empty">Aaj kuch planned nahi. AI se topic maango ↑ ya Settings mein shorts/day set karo.</div>';
   else{if($('tList').querySelector('.empty'))$('tList').innerHTML='';patch($('tList'),items,i=>i._id,vcard)}
+  planBanner(st);
   $('tNote').textContent=`Files ${st.keepHours} ghante baad auto-delete hoti hain; record aur links Plan → Calendar mein rehte hain.`;
-  $('sugs').innerHTML=['Aaj ke liye 3 viral topic do','Mere pichle hooks kamzor kyun the?','Ek bohot emotional story-reel likho','Kal ke liye heartbreak wali reel plan karo'].map(s=>`<button class="sg" onclick="cmdQuick(this.textContent)">${esc(s)}</button>`).join('');
+  $('sugs').innerHTML=['Aaj ke liye 3 viral topic do','Mere pichle hooks kamzor kyun the?','Ek bohot emotional kahani wali reel likho','Kal ke liye heartbreak wali reel plan karo'].map(s=>`<button class="sg" onclick="cmdQuick(this.textContent)">${esc(s)}</button>`).join('');
 }
 async function pauseVid(id){const r=await post(`/reels/${id}/pause`);toast(r.error||'Rok rahe hain: abhi ka chhota step khatam hote hi ruk jayegi, kaam saved rahega');setTimeout(refresh,1500)}
 async function resumeVid(id,now){const r=await post(`/reels/${id}/resume${now?'?now=1':''}`);toast(r.error||(now?'Abhi chalu: chal rahi video ruk gayi':'Resume: line mein sabse aage'));setTimeout(refresh,600)}
@@ -255,7 +278,7 @@ async function suggestTopic(id){toast('AI naya topic soch raha hai…');await po
 async function act(id,a,q=''){const r=await post(`/reels/${id}/${a}${q}`);if(r.error)toast(r.error);else toast(a==='approve'?'Approve ho gayi ✓':'Ho gaya');refresh()}
 async function pubNow(id,b){sure(b,async()=>{const r=await post(`/reels/${id}/publish`);toast(r.error||'Upload shuru');refresh()},'Pakka post karein?')}
 function copyCap(id){const r=reels.find(x=>x._id===id)||(plan.items.find(i=>i.reel&&i.reel._id===id)||{}).reel;const s=r&&r.script;if(!s)return;navigator.clipboard.writeText(`${s.caption}\n\n${(s.hashtags||[]).join(' ')}`);toast('Caption copy ho gaya')}
-function refresh(){if(view==='today')loadToday();if(view==='videos')loadVideos();if(view==='plan')loadPlan()}
+function refresh(){if(view==='uploads')loadUploads();if(view==='today')loadToday();if(view==='videos')loadVideos();if(view==='plan')loadPlan()}
 setInterval(()=>{if(document.hidden||$('ov').classList.contains('on'))return;const busy=(view==='today'||view==='plan')&&plan.items.some(i=>i.scriptBusy||(i.reel&&GEN.includes(i.reel.status)));if(busy||view==='videos'&&reels.some(r=>GEN.includes(r.status)))refresh()},5000);
 
 /* ================= VIDEOS ================= */
@@ -268,7 +291,7 @@ async function loadVideos(){const d=await api('/reels');if(d.error)return;reels=
   patch(g,list,r=>r._id,r=>{const busy=GEN.includes(r.status),paused=r.status==='paused';
     const m=paused?`<div class="ring" style="text-align:center;color:var(--mute)"><div class="num" style="font-size:26px;font-weight:700;color:var(--gold)">${r.progress||0}%</div>⏸ roka hua</div>`:busy?`<div class="ring" style="text-align:center;color:var(--mute)"><div class="num" style="font-size:26px;font-weight:700;color:var(--gold)">${r.progress||0}%</div>${esc(STEP[r.status]||'')}</div>`:r.videoFile?`<video controls playsinline preload="metadata" src="/media/videos/${r.videoFile}?v=${new Date(r.updatedAt).getTime()}"></video>`:`<div class="help" style="padding:16px;text-align:center">${r.purgedAt?'Files auto-clean ho gayi':'—'}</div>`;
     const chip={published:'chip g',approved:'chip g',ready:'chip y',failed:'chip r',rejected:'chip r'}[r.status]||'chip';
-    return `<div class="gc"><div class="m">${m}</div><div class="b"><span class="${chip}" style="align-self:flex-start">${esc(r.status.replace('_',' '))}</span><div class="t">${esc((r.script&&clean(r.script.hookText))||r.topic)}</div><div class="help">${esc(r.topic)}</div>
+    return `<div class="gc"><div class="m">${m}</div><div class="b"><div style="display:flex;gap:6px;flex-wrap:wrap"><span class="${chip}">${esc(r.status.replace('_',' '))}</span>${platChips(r)}</div><div class="t">${esc((r.script&&clean(r.script.hookText))||r.topic)}</div><div class="help">${esc(r.topic)}</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">${busy?`<button class="btn sm" onclick="pauseVid('${r._id}')">⏸ Roko</button>`:''}${paused?`<button class="btn sm gold" onclick="resumeVid('${r._id}')">▶ Resume</button>`:''}${r.status==='ready'||r.status==='rejected'?`<button class="btn sm green" onclick="act('${r._id}','approve')">✓ Approve</button>`:''}${r.editable&&!busy?`<a class="btn sm" href="/editor.html?id=${r._id}">Edit</a>`:''}${r.script&&!busy&&!paused?`<button class="btn sm ai" onclick="aiAbout('${r._id}','reel')">✨ AI</button>`:''}
       <details class="more"><summary class="btn sm">⋯</summary><div class="menu">${r.script&&!busy?`<button onclick="openReelScript('${r._id}')">Script edit</button>`:''}${r.videoFile&&!busy?`<a href="/media/videos/${r.videoFile}" download>Download</a><button onclick="act('${r._id}','regenerate','?mode=render')">Naya look</button><button onclick="act('${r._id}','regenerate','?mode=script')">Naya script</button>`:''}${r.script?`<button onclick="copyCap('${r._id}')">Caption copy</button>`:''}${['ready','approved'].includes(r.status)?`<button onclick="pubNow('${r._id}',this)">Abhi post karo</button>`:''}<button class="red" onclick="sure(this,async()=>{await api('/reels/${r._id}',{method:'DELETE'});loadVideos()})">Delete</button></div></details></div></div></div>`});
 }
@@ -278,6 +301,7 @@ async function newReel(){const t=$('newTopic').value.trim();if(!t)return;await p
 function planTab(t){planMode=t;$('p-list').style.display=t==='list'?'':'none';$('p-cal').style.display=t==='cal'?'':'none';$('pt-list').classList.toggle('on',t==='list');$('pt-cal').classList.toggle('on',t==='cal');t==='cal'?loadCal():loadPlan()}
 const fmtOpts=sel=>'<option value="">Auto type</option>'+formats.map(f=>`<option value="${f.id}" ${f.id===sel?'selected':''}>${esc(f.label)}</option>`).join('');
 async function loadPlan(){if(planMode==='cal')return loadCal();const[p,st]=await Promise.all([api('/plan'),api('/settings')]);if(p.error)return;plan=p;settings=st;
+  planBanner(st);
   $('pSub').textContent=`${st.shorts} shorts/din · ${st.automation?'automation ON':'automation OFF'}`;
   const days={};plan.items.forEach(i=>(days[i.date]=days[i.date]||[]).push(i));
   $('pBody').innerHTML=Object.keys(days).map(d=>`<div class="day"><h3>${d===plan.today?'Aaj · ':''}${dayLabel(d)}</h3>${days[d].map(prow).join('')}</div>`).join('')||'<div class="empty">Plan khaali hai.</div>'}
@@ -307,7 +331,7 @@ function drawCal(){const{month,days,today}=cal.data,[y,mo]=month.split('-').map(
 
 /* ================= SCRIPT STUDIO (drawer) with AI quick-actions ================= */
 let S=null;
-const AIQ=[['🔥 Hook aur strong karo','Is script ka hook scroll-stopping banao (8 words se kam, curiosity ya tension ke saath). Baaki script same rakho.'],['💬 Aur emotional karo','Is script ko aur emotional aur personal banao: ek specific scene, ek chubhne wali line. Cheezein generic mat rakhna.'],['✂️ Chhota karo','Is script ko 15-20% chhota karo, sirf sabse strong lines rakho.'],['🎭 Naya angle','Isi topic par bilkul alag angle se script likho, hook alag ho.'],['🗣 Bolne mein natural banao','Lines ko aise badlo jaise koi dost bolta hai: chhote vaakya, pauses, koi kitabi shabd nahi.']];
+const AIQ=[['🔥 Hook aur strong karo','Is script ka hook scroll-stopping banao (8 words se kam, curiosity ya tension ke saath). Baaki script same rakho.'],['💬 Aur emotional karo','Is script ko aur emotional aur personal banao: ek specific scene, ek chubhne wali line. Cheezein generic mat rakhna.'],['✂️ Chhota karo','Is script ko 15-20% chhota karo, sirf sabse strong lines rakho.'],['📖 Aur kahani jaisa banao','Is script ko poori tarah ek kahani bana do: ek naam wala kirdaar, scenes, beech mein mod, ant mein ek line ki seekh. Lecture jaisa kuch nahi.'],['🎭 Naya angle','Isi topic par bilkul alag kahani likho, hook alag ho.'],['🗣 Bolne mein natural banao','Lines ko aise badlo jaise koi dost bolta hai: chhote vaakya, pauses, koi kitabi shabd nahi.']];
 async function openStudio(id,gen){const it=plan.items.find(x=>x._id===id);if(!it)return;if(!verses.length)verses=await api('/verses');
   S={kind:'plan',id,item:it,topic:it.topic,formatId:it.formatId||'',script:it.script?JSON.parse(JSON.stringify(it.script)):null,prev:null,busy:'',long:it.kind==='long',msgs:[]};drawStudio();$('ov').classList.add('on');if(gen&&!S.script&&!S.long)studioGen()}
 async function openReelScript(id){const r=reels.find(x=>x._id===id);if(!r||!r.script)return;if(!verses.length)verses=await api('/verses');
@@ -318,8 +342,8 @@ function drawStudio(){const s=S.script,rl=S.kind==='reel';
   :`<div class="aiq">${AIQ.map(([l,p],k)=>`<button class="btn sm ai" ${S.busy?'disabled':''} onclick="studioAI(${k})">${l}</button>`).join('')}</div>
     ${S.busy?`<div class="chip p" style="margin-bottom:12px">✨ ${esc(S.busy)}</div>`:''}
     <div class="f" style="margin-bottom:12px"><label>On-screen hook</label><input value="${esc(s.hookText)}" oninput="S.script.hookText=this.value"></div>
-    ${S.long?'':`<div class="vt" style="margin-bottom:12px"><span class="chip">${esc(fmtName(s.formatId)||'')}</span><span class="chip ${estSec(s)<28||estSec(s)>62?'r':''}">${s.verseId?'Shlok ✓':'No shlok'} · ~${estSec(s)}s</span></div>`}
-    ${s.lines.map((l,i)=>`<div class="ln ${s.verseId&&i===s.shlokLineIndex?'chant':''}"><div class="n">${i+1}</div><div><textarea rows="2" oninput="S.script.lines[${i}].show=this.value">${esc(l.show)}</textarea>${s.verseId&&i===s.shlokLineIndex?'<div class="help">↑ is line ke baad shlok chant hoga</div>':''}</div></div>`).join('')}
+    ${S.long?'':`<div class="vt" style="margin-bottom:12px"><span class="chip">${esc(fmtName(s.formatId)||'')}</span><span class="chip ${estSec(s)<28||estSec(s)>62?'r':''}">~${estSec(s)}s</span></div>`}
+    ${s.lines.map((l,i)=>`<div class="ln"><div class="n">${i+1}</div><div><textarea rows="2" oninput="S.script.lines[${i}].show=this.value">${esc(l.show)}</textarea></div></div>`).join('')}
     <div class="f" style="margin-top:14px"><label>Post caption</label><textarea rows="2" oninput="S.script.caption=this.value">${esc(s.caption)}</textarea></div>
     <div class="f" style="margin-top:12px"><label>AI ko apne words mein batao kya badalna hai</label><div style="display:flex;gap:8px"><input id="sIn" placeholder="e.g. last line ko question banao" onkeydown="if(event.key==='Enter')studioFree()"><button class="btn ai" onclick="studioFree()">Bhejo</button></div></div>
     ${S.msgs.length?`<div class="help" style="margin-top:10px;white-space:pre-wrap">${esc(S.msgs.at(-1))}</div>`:''}`;
@@ -357,15 +381,55 @@ async function applyChat(i){const m=chat[i];if(!m.reelId)return toast('Pehle kis
 async function makeFrom(i){const m=chat[i];const r=await post('/reels/from-script',{topic:m.newScript.hookText,script:m.newScript});if(r.error)return toast(r.error);delete m.newScript;renderChat();toast('Video line mein lag gayi');go('videos')}
 async function topicToReel(i,k){await post('/reels',{topic:chat[i].topics[k]});toast('Video line mein lag gayi');refresh()}
 
+/* ================= UPLOADS ================= */
+const STT=t=>t?new Date(t).toLocaleString('en-IN',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'—';
+function platBlock(p){if(!p)return'';const[ic,cl,lb]=PS[p.state]||['','',''];
+  return `<div class="pl"><div class="plh"><b>${esc(p.label)}</b><span class="chip ${cl}">${ic} ${lb}</span></div><div class="help">${esc(p.text)}</div>${p.state==='error'&&p.error?`<div class="err">${esc(p.error)}</div>`:''}${p.url?`<div><a class="btn sm" target="_blank" href="${esc(p.url)}">Dekho ↗</a></div>`:''}</div>`}
+async function loadUploads(){const d=await api('/uploads');if(d.error)return;const s=d.summary;
+  $('upSum').innerHTML=[['Upload ho gayi',s.done,'g'],['Jaane wali / ho rahi',s.pending,'y'],['Approve ka wait',s.waiting,''],['Error',s.error,s.error?'r':'']].map(([l,v,c])=>`<div class="pstep"><b class="${c?'':''}" style="${c==='r'?'color:var(--red)':c==='g'?'color:var(--green)':c==='y'?'color:var(--gold)':''}">${v}</b><span>${l}</span></div>`).join('');
+  const rank=i=>Object.values(i.platforms).some(p=>p.state==='error')?0:Object.values(i.platforms).some(p=>['pending','uploading','waiting'].includes(p.state))?1:2;
+  const items=d.items.slice().sort((a,b)=>rank(a)-rank(b)||(rank(a)===2?new Date(b.scheduledFor)-new Date(a.scheduledFor):new Date(a.scheduledFor)-new Date(b.scheduledFor)));
+  if(!items.length){$('upList').innerHTML='<div class="empty">Abhi koi video ready nahi. Video ban ke approve hogi to yahan dikhegi.</div>';return}
+  $('upList').innerHTML=items.map(i=>{const err=Object.values(i.platforms).some(p=>p.state==='error'),canRetry=err||(i.status==='approved'&&Object.values(i.platforms).some(p=>p.state==='pending'));
+    return `<div class="up ${err?'bad':''}"><div class="vb" style="gap:6px"><div class="vt"><span class="chip ${i.format==='long'?'p':''}">${i.format==='long'?'LONG · sirf YouTube':'SHORT · YouTube + Insta'}</span><span class="chip">⏰ ${STT(i.scheduledFor)}</span></div>
+      <div class="vh" style="font-size:16px">${esc(i.hook||i.topic)}</div><div class="vtopic">${esc(i.topic)}</div>
+      <div class="va" style="margin-top:4px">${canRetry?`<button class="btn sm ${err?'gold':''}" onclick="retryUp('${i._id}',this)">${err?'Dobara upload karo':'Abhi upload karo'}</button>`:''}${i.status==='ready'?`<button class="btn sm green" onclick="act('${i._id}','approve')">✓ Approve</button>`:''}</div></div>
+      ${platBlock(i.platforms.youtube)}${i.format==='long'?`<div class="pl"><div class="plh"><b>Instagram</b><span class="chip">— Nahi jayegi</span></div><div class="help">Long video sirf YouTube par jaati hai</div></div>`:platBlock(i.platforms.instagram)}</div>`}).join('')}
+async function retryUp(id,btn){btn.disabled=true;toast('Upload shuru ho rahi hai…');const r=await post(`/reels/${id}/publish`);toast(r.error||'Upload try ho gayi, status dekho');refresh();setTimeout(refresh,4000)}
+setInterval(()=>{if(!document.hidden&&view==='uploads')loadUploads()},15000);
+
+/* daily plan banner: 3 reels (YT + Insta) + 1 long (YT only) */
+function planBanner(st){const ok=Number(st.shorts)===3&&Number(st.long)===1;
+  const h=`<div class="banner ${ok?'':'warn'}"><b>Roz ka plan:</b><span class="chip g">${st.shorts} reels → YouTube + Instagram</span><span class="chip ${st.long?'p':'r'}">${st.long} long (~5 min) → sirf YouTube</span>${ok?'':`<span class="help">Tumhara target 3 reels + 1 long hai.</span><button class="btn sm gold" onclick="fixPlan()">3 reels + 1 long set karo</button>`}</div>`;
+  ['planBanner','planBanner2'].forEach(k=>{if($(k))$(k).innerHTML=h})}
+async function fixPlan(){await put('/settings',{shorts:3,long:1});toast('Set ho gaya: roz 3 reels + 1 long');await api('/plan');refresh()}
+
+/* weekly plan template */
+const TPL=`Din 1
+Reel: Interview ka dar | Aaj ki kahani
+Reel: Karn ka sabse bada dukh | Mahabharat ki kahani
+Reel: Dost se dhokha | Ant mein twist | note: ant mein dost hi wapas aaye
+LONG: Ek ladka jo har cheez mein late tha
+
+Din 2
+Reel: Overthinking at 3 AM | Aaj ki kahani
+Reel: Arjun ka sabse bada darr | Arjun–Krishna ki baat
+Reel: Gita ka pehla shabd | Raaz ki kahani
+LONG: Ek ladki jo sabko khush karte-karte thak gayi`;
+function tplCopy(){navigator.clipboard.writeText(TPL);toast('Template copy ho gaya')}
+function tplFill(){$('wkText').value=TPL;toast('Box mein daal diya, apne topic likho')}
+function tplDownload(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([TPL],{type:'text/plain'}));a.download='weekly-plan-template.txt';a.click()}
+document.addEventListener('DOMContentLoaded',()=>{if($('tplBox'))$('tplBox').textContent=TPL});
+
 /* ================= SETTINGS ================= */
 async function loadSettings(){const[st,s2]=await Promise.all([api('/settings'),api('/status')]);if(st.error)return;const ig=s2.integrations||{youtube:{},instagram:{}};
   const chk=(k,l,h='')=>`<label class="tg"><input type="checkbox" id="s_${k}" ${st[k]?'checked':''}><span><b>${l}</b>${h?`<br><span class="help">${h}</span>`:''}</span></label>`;
   const inp=(k,l,t='text',x='')=>`<div class="f"><label>${l}</label><input id="s_${k}" type="${t}" ${x} value="${esc(st[k]??'')}"></div>`;
   $('setBody').innerHTML=`<div class="box"><h4>Roz ka automation</h4><div class="form">${chk('automation','Roz khud videos banao','Set time par aaj ki videos shuru ho jaati hain')}${inp('generateAt','Generation time (IST)','time')}${inp('shorts','Shorts per day','number','min=0 max=10')}${inp('long','Long videos per day (1 = roz ek 5-min video)','number','min=0 max=3')}
     <div class="f"><label>Publish times (reels, comma)</label><input id="s_shortSlots" value="${esc((st.shortSlots||[]).join(', '))}"></div>${inp('longSlot','Long video (5 min, sirf YouTube) ka time','time')}${inp('planDays','Kitne din aage plan','number','min=1 max=30')}
-    <div class="f"><label>Reel ki length</label><select id="s_reelLength">${[['auto','Auto 30-60s'],['30','30s'],['45','45s'],['60','60s']].map(([v,l])=>`<option value="${v}" ${v===String(st.reelLength)?'selected':''}>${l}</option>`).join('')}</select></div>${inp('shlokPercent','Kitni % reels mein shlok','number','min=0 max=100')}
+    <div class="f"><label>Reel ki length</label><select id="s_reelLength">${[['auto','Auto 30-60s'],['30','30s'],['45','45s'],['60','60s']].map(([v,l])=>`<option value="${v}" ${v===String(st.reelLength)?'selected':''}>${l}</option>`).join('')}</select></div>
     ${chk('prewriteScripts','Script pehle se likho (00:15)','Home par topic + script ready dikhta hai')}${inp('keepHours','Files delete hon (ghante)','number','min=1 max=168')}${chk('autoApprove','Auto-approve','Off = pehle tum review karoge (recommended)')}</div></div>
-  <div class="box"><h4>Publishing</h4><div class="form">${chk('autoPublish','Time par khud post karo')}<div class="f"><label>YouTube visibility</label><select id="s_youtubePrivacy">${['public','unlisted','private'].map(v=>`<option ${v===st.youtubePrivacy?'selected':''}>${v}</option>`).join('')}</select></div>
+  <div class="box"><h4>Publishing</h4><p class="help" style="margin-top:0">Reels (30-60 sec) jaati hain <b>YouTube + Instagram</b> dono par. Long video (~5 min) sirf <b>YouTube</b> par. Status Uploads page par dikhta hai.</p><div class="form">${chk('autoPublish','Time par khud post karo')}<div class="f"><label>YouTube visibility</label><select id="s_youtubePrivacy">${['public','unlisted','private'].map(v=>`<option ${v===st.youtubePrivacy?'selected':''}>${v}</option>`).join('')}</select></div>
     ${chk('youtube','YouTube upload',ig.youtube.configured?(ig.youtube.connected?'Connected':'Connect nahi hua'):'.env mein YOUTUBE_CLIENT_ID/SECRET daalo')}${chk('instagram','Instagram Reels upload',ig.instagram.configured?'Token mila':'.env mein IG_USER_ID / IG_ACCESS_TOKEN daalo')}</div>
     ${ig.youtube.configured?`<div style="margin-top:12px"><a class="btn" href="/oauth/youtube" target="_blank">${ig.youtube.connected?'YouTube reconnect':'YouTube connect'}</a></div>`:''}</div>
   <div class="box"><h4>Voice</h4><p class="help" style="margin-top:0">Abhi: <b>${s2.voice.length?esc(s2.voice[0])+' ('+esc(s2.voiceName[s2.voice[0]]||'')+')':'koi nahi'}</b>. Sabse natural Hindi ke liye Sarvam key daalo.</p><div class="form">
@@ -377,7 +441,7 @@ async function loadSettings(){const[st,s2]=await Promise.all([api('/settings'),a
 const KN={gemini:'Gemini',cloudflare:'Cloudflare images',pollinations:'Pollinations',sarvam:'Sarvam voice',elevenlabs:'ElevenLabs',google:'Google TTS',pexels:'Pexels',pixabay:'Pixabay'};
 async function testVoice(){$('vt').disabled=true;$('vm').textContent='Sample ban raha hai…';await put('/settings',{voiceGemini:$('s_voiceGemini').value,voiceSarvam:$('s_voiceSarvam').value.trim(),voiceEleven:$('s_voiceEleven').value.trim()});
   const r=await fetch('/api/voice/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});$('vt').disabled=false;if(!r.ok){$('vm').textContent='Fail: '+((await r.json()).error||r.status);return}$('vm').textContent='Chal raha hai…';const a=new Audio(URL.createObjectURL(await r.blob()));a.onended=()=>$('vm').textContent='';a.play();loadStatus()}
-async function saveSettings(){const g=k=>$('s_'+k),b={};['automation','prewriteScripts','autoApprove','autoPublish','youtube','instagram'].forEach(k=>b[k]=g(k).checked);['generateAt','longSlot','youtubePrivacy','reelLength'].forEach(k=>b[k]=g(k).value);['shorts','long','planDays','keepHours','shlokPercent'].forEach(k=>b[k]=+g(k).value);['voiceGemini','voiceSarvam','voiceEleven'].forEach(k=>b[k]=g(k).value.trim());b.shortSlots=g('shortSlots').value.split(',').map(s=>s.trim()).filter(Boolean);
+async function saveSettings(){const g=k=>$('s_'+k),b={};['automation','prewriteScripts','autoApprove','autoPublish','youtube','instagram'].forEach(k=>b[k]=g(k).checked);['generateAt','longSlot','youtubePrivacy','reelLength'].forEach(k=>b[k]=g(k).value);['shorts','long','planDays','keepHours'].forEach(k=>b[k]=+g(k).value);['voiceGemini','voiceSarvam','voiceEleven'].forEach(k=>b[k]=g(k).value.trim());b.shortSlots=g('shortSlots').value.split(',').map(s=>s.trim()).filter(Boolean);
   const r=await put('/settings',b);toast(r.error||'Settings save ho gayi ✓');loadStatus()}
 async function loadStatus(){const s=await api('/status');$('dot').classList.toggle('ok',!s.error&&s.voice&&s.voice.length>0);$('dot').title=s.error?'Server error':`Voice: ${(s.voice||[]).join(', ')||'none'} · Images: ${(s.images||[]).join(', ')||'stock'} · Music: ${s.music}`}
 

@@ -13,7 +13,8 @@ const env = process.env;
 // ---- API keys: every provider may have several keys (comma list or _2.._9); they rotate when one hits its limit ----
 const cfPairs = [
   ...parseList(env.CLOUDFLARE_ACCOUNTS), // acc1:token1,acc2:token2
-  ...(env.CLOUDFLARE_ACCOUNT_ID && env.CLOUDFLARE_API_TOKEN ? [`${env.CLOUDFLARE_ACCOUNT_ID}:${env.CLOUDFLARE_API_TOKEN}`] : []),
+  // CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_API_TOKEN may also hold comma separated lists (same order): they are paired up
+  ...(() => { const ids = parseList(env.CLOUDFLARE_ACCOUNT_ID), toks = parseList(env.CLOUDFLARE_API_TOKEN); return ids.map((id, i) => (toks[i] ? `${id}:${toks[i]}` : null)).filter(Boolean); })(),
   ...[2, 3, 4, 5, 6, 7, 8, 9].filter((i) => env[`CLOUDFLARE_ACCOUNT_ID_${i}`] && env[`CLOUDFLARE_API_TOKEN_${i}`]).map((i) => `${env[`CLOUDFLARE_ACCOUNT_ID_${i}`]}:${env[`CLOUDFLARE_API_TOKEN_${i}`]}`),
 ];
 const K = {
@@ -96,6 +97,8 @@ export const config = {
   queue: { jobMinutes: num(env.JOB_TIMEOUT_MIN, 40), jobMinutesLong: num(env.JOB_TIMEOUT_MIN_LONG, 150) }, // one video at a time; a stuck one is stopped after this long
   render: {
     concurrency: num(env.RENDER_CONCURRENCY, Math.max(1, Math.floor(os.cpus().length / 3))),
+    concurrencyLong: num(env.RENDER_CONCURRENCY_LONG, 1), // the 5-minute video is rendered with ONE browser tab (low RAM)
+    longScale: num(env.LONG_RENDER_SCALE, 2 / 3), // long video = 1280x720 (2/3 of 1920x1080); set 1 for full HD if your PC has 16 GB+ RAM
     preset: env.X264_PRESET || 'veryfast',
     crf: num(env.RENDER_CRF, 22),
   },

@@ -17,7 +17,7 @@ import { ART_STYLES, buildPrompt, generateImage, imageProvidersAvailable } from 
 import { getSettings, saveSettings } from './services/settings.js';
 import { ensurePlan, importWeekPlan, isScriptBusy, newTopicFor, planWeekWithAI, prewriteScripts, runDay, runPlanItem, todayIST } from './services/planner.js';
 import { approveReel } from './services/reelActions.js';
-import { integrationStatus, publishReel } from './services/publisher.js';
+import { integrationStatus, platformStatus, publishReel } from './services/publisher.js';
 import { youtubeAuthUrl, youtubeConfigured, youtubeExchange } from './uploaders/youtube.js';
 
 const rel = (project) => JSON.parse(JSON.stringify(project).split(config.baseUrl).join('')); // browser uses same-origin URLs
@@ -75,7 +75,8 @@ export function createApp() {
   app.get('/api/reels', wrap(async (_req, res) => {
     const reels = await Reel.find().select('-project').sort({ createdAt: -1 }).limit(120).lean();
     const editable = new Set((await Reel.find({ project: { $ne: null } }).select('_id').lean()).map((r) => String(r._id)));
-    res.json({ queue: queueLength(), ...queueState(), reels: reels.map((r) => ({ ...r, editable: editable.has(String(r._id)) })) });
+    const [st, integ] = await Promise.all([getSettings(), integrationStatus()]);
+    res.json({ queue: queueLength(), ...queueState(), reels: reels.map((r) => ({ ...r, editable: editable.has(String(r._id)), platforms: platformStatus(r, st, integ) })) });
   }));
   app.post('/api/reels', wrap(async (req, res) => {
     const topic = String(req.body.topic || '').trim();
@@ -99,6 +100,18 @@ export function createApp() {
   }));
   app.post('/api/reels/:id/approve', wrap(async (req, res) => res.json(await approveReel(req.params.id))));
   app.post('/api/reels/:id/reject', wrap(async (req, res) => res.json(await Reel.findByIdAndUpdate(req.params.id, { status: 'rejected' }, { new: true }))));
+  // Upload overview: every finished video, where it goes (YouTube / Instagram) and what happened
+  app.get('/api/uploads', wrap(async (_req, res) => {
+    const [st, integ] = await Promise.all([getSettings(), integrationStatus()]);
+    const reels = await Reel.find({ status: { $in: ['ready', 'approved', 'published'] } }).select('-project').sort({ scheduledFor: -1, createdAt: -1 }).limit(60).lean();
+    const items = reels.map((r) => ({
+      _id: r._id, topic: r.topic, hook: r.script?.hookText || r.script?.title || '', format: r.format, status: r.status,
+      scheduledFor: r.scheduledFor, platforms: platformStatus(r, st, integ), videoFile: r.videoFile, purged: !!r.purgedAt,
+    }));
+    const all = items.flatMap((i) => Object.values(i.platforms)).filter((p) => p.state !== 'na');
+    const count = (s) => all.filter((p) => p.state === s).length;
+    res.json({ summary: { done: count('done'), pending: count('pending') + count('uploading'), waiting: count('waiting'), error: count('error'), off: count('off') }, items });
+  }));
   app.post('/api/reels/:id/publish', wrap(async (req, res) => res.json(await publishReel(req.params.id, { now: true }))));
   app.post('/api/reels/:id/regenerate', wrap(async (req, res) => {
     const reel = await Reel.findById(req.params.id);
@@ -194,8 +207,10 @@ export function createApp() {
   app.get('/api/plan', wrap(async (_req, res) => {
     await ensurePlan();
     const items = await Plan.find({ date: { $gte: todayIST() } }).sort({ date: 1, slot: 1 });
-    const reels = await Reel.find({ _id: { $in: items.map((i) => i.reelId).filter(Boolean) } }).select('status progress pausedStage videoFile publish scheduledFor purgedAt error');
-    const byId = Object.fromEntries(reels.map((r) => [String(r._id), r]));
+    const reels = await Reel.find({ _id: { $in: items.map((i) => i.reelId).filter(Boolean) } })
+      .select('status format progress pausedStage videoFile publish scheduledFor purgedAt error');
+    const [st, integ] = await Promise.all([getSettings(), integrationStatus()]);
+    const byId = Object.fromEntries(reels.map((r) => [String(r._id), { ...r.toObject(), platforms: platformStatus(r, st, integ) }]));
     res.json({ today: todayIST(), queue: queueState(), items: items.map((i) => ({ ...i.toObject(), scriptBusy: isScriptBusy(i._id), reel: byId[String(i.reelId)] || null })) });
   }));
   app.put('/api/plan/:id', wrap(async (req, res) => {

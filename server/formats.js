@@ -1,6 +1,6 @@
-// Reel FORMATS: every reel is written in one of these shapes, so videos stop looking the same.
-// `shlok: true`  -> the narrator chants a verse from the verse bank (server/verses.js)
-// `shlok: false` -> no chant at all: story / mystery / deep truth / challenge style
+// Reel FORMATS: every video is a STORY (character -> trouble -> turn -> result), told in 30-60 seconds.
+// The different formats only change the kind of story, so videos stop looking the same.
+// There is NO shlok / chant anywhere (shlok is always false). The Gita idea lives inside the story, in plain Hinglish.
 //
 // Speaking speed used for length maths: ~2.4 Hinglish words per second (TTS + natural pauses).
 export const WORDS_PER_SEC = 2.4;
@@ -10,63 +10,41 @@ export const MAX_SEC = 60;
 
 export const FORMATS = [
   {
-    id: 'classic', label: 'Dard → Gita → Shlok', shlok: true, weight: 3,
-    desc: 'Viewer ka dard, phir Krishna ka shlok (chant), phir uska matlab aur ek chhota action.',
-    hooks: ['Raat ke 2 baje, phone haath mein... aur dimaag mein wahi *purani baat*.', 'Tum kamzor nahi ho. Tum bas *thak* chuke ho.', 'Jo tumhe ignore karta hai, uske liye *rona* band karo.'],
-    structure: `hook (pattern interrupt) -> pain in 2-3 lines with ONE specific everyday moment (viewer feels seen) -> a small twist / open loop ("par Krishna ne isse alag hi baat kahi thi") -> lead-in line "Shri Krishna ne Gita mein kaha tha..." (this is shlok_line_index; the verse is then CHANTED) -> meaning in plain modern words (2-3 lines) -> ONE tiny action for today -> closing loop line that makes people comment or rewatch`,
+    id: 'modern_story', label: 'Aaj ki kahani', shlok: false, weight: 5,
+    desc: 'Ek naam wala aam insaan, ek asli situation, ek mod aur ant mein ek seekh. Poori video ek kahani.',
+    hooks: ['Usne 11 baar resume bheja. Ek bhi jawab nahi.', 'Raat ke 2 baje, Riya ka phone phir *vibrate* hua.', 'Papa ka call aaya. Rohan ne uthaya *nahi*.'],
+    structure: `hook = the most tense moment of the story, dropped in the middle (max 8 words) -> WHO: a named ordinary person with ONE specific detail (age, job, city, an object) in 1-2 lines -> WHAT WENT WRONG: 2-3 SCENES with concrete details (a time, an object, a spoken line) -> the WORST moment (1 line, the lowest point) -> THE TURN around the middle (mini re-hook "Par tabhi..."): something small shifts: a memory, a sentence someone says, or a quiet thought that carries Krishna's idea in plain Hinglish (no Sanskrit, no verse) -> WHAT THEY DID DIFFERENTLY (2-3 lines, one concrete action) -> RESULT (1-2 lines, honest, no miracle) -> ONE short lesson line the viewer will screenshot -> last line leaves a question or loop`,
   },
   {
-    id: 'decode', label: 'Shlok Decode (shlok pehle)', shlok: true, weight: 2,
-    desc: 'Ek famous shlok ke andar chhupi baat ko 2-3 shabdon mein tod ke samjhana.',
-    hooks: ['Gita ka ye ek shlok tumne *galat* padha hai.', 'Is shlok mein sirf *3 shabd* hain jo sab badal dete hain.', 'Sab isko bolte hain, *samajhte* kam hain.'],
-    structure: `hook claiming people misunderstand this verse -> 1-2 lines of common wrong understanding -> short lead-in ("Suno, Krishna ne kya kaha...") (this is shlok_line_index, keep it EARLY: line 2 or 3; the verse is then CHANTED) -> decode 2-3 key words / ideas of the verse, one line each, with a modern example -> "iska matlab tumhari life mein" 2 lines -> closing line that dares the viewer to try it today`,
+    id: 'epic_story', label: 'Mahabharat ki kahani', shlok: false, weight: 3,
+    desc: 'Mahabharat / Krishna ka koi jaana-pehchana prasang ek rochak kahani ki tarah, ant mein aaj ki zindagi se jod.',
+    hooks: ['Karn ko sab kuch mila... bas *ek cheez* nahi.', 'Arjun ne dhanush *neeche* rakh diya. Kyun?', 'Ekalavya ne guru ko *angootha* diya. Phir?'],
+    structure: `hook (cliffhanger from the episode) -> the episode told as a gripping scene-by-scene story, present tense, 6-8 short lines, vivid details, rising tension; use ONLY well-known events, never invent facts -> the turning point -> what the character realised or lost -> "Aaj ki zindagi mein ye wahi pal hai jab..." connecting it to the viewer (2 lines) -> ONE short lesson line -> last line is an open question`,
   },
   {
-    id: 'story_shlok', label: 'Kahani → Shlok', shlok: true, weight: 2,
-    desc: 'Chhoti kahani (Mahabharat ya modern), aur climax par shlok chant hota hai.',
-    hooks: ['Arjun ne ladai se pehle *hathiyaar* kyun chhod diye?', 'Ek ladka tha, jisne *sab kuch* kho diya. Phir usne ye ek line suni...', 'Kurukshetra ke maidan mein sabse *dari hui* cheez thi... Arjun ki aankhein.'],
-    structure: `hook (cliffhanger) -> story told in present tense with concrete details, 5-7 short lines, tension rising -> the turning point -> lead-in "Tab Krishna ne kaha..." (this is shlok_line_index; the verse is then CHANTED as the climax) -> what that verse means for the viewer's own life (2 lines) -> last line that leaves one open question`,
-  },
-  {
-    id: 'dialogue', label: 'Arjun–Krishna sawaal-jawab', shlok: false, weight: 2,
-    desc: 'Arjun ka aaj ke zamane jaisa sawaal, Krishna ka seedha jawab. Shlok chant nahi.',
+    id: 'dialogue', label: 'Arjun–Krishna ki baat', shlok: false, weight: 2,
+    desc: 'Arjun ka aaj ke zamane jaisa sawaal, Krishna ka seedha jawab. Ek chhoti kahani jo baatcheet se aage badhti hai.',
     hooks: ['Arjun: "Mujhse nahi hoga." Krishna: "Ye line tum roz bolte ho."', 'Agar Arjun aaj ke zamane mein hota, to Krishna se ye *poochta*...', 'Arjun ne poocha: "Sab chhod doon?" Krishna ka jawab *chubhne* wala tha.'],
-    structure: `hook (a one-line exchange) -> 4-6 lines of back-and-forth: Arjun says a modern doubt in modern words (overthinking, comparison, fear of failing), Krishna answers short and direct (each answer is ONE idea from the grounding teachings) -> a line where the viewer realises "ye to mera sawaal hai" -> ONE action for today -> closing line. Mark who speaks by writing the name at the start of the line, e.g. "Arjun: ..." / "Krishna: ...". NO verse is chanted.`,
+    structure: `hook (a one-line exchange) -> a tiny story told through back-and-forth: Arjun says a modern doubt in modern words (overthinking, comparison, fear of failing), Krishna answers short and direct (each answer is ONE idea from the grounding teachings) -> Arjun's mood visibly changes (that is the turn) -> a line where the viewer realises "ye to mera sawaal hai" -> ONE short lesson line -> closing line. Mark who speaks by writing the name at the start of the line, e.g. "Arjun: ..." / "Krishna: ...".`,
   },
   {
-    id: 'story', label: 'Kahani (bina shlok)', shlok: false, weight: 3,
-    desc: 'Mahabharat / Krishna ki kahani ya modern parable, ant mein ek sacchi seekh.',
-    hooks: ['Karn ko sab kuch mila... bas *ek cheez* nahi.', 'Ek raja ne apne *dost* ko khud se bada bana diya. Kyun?', 'Mahabharat ka sabse *akela* insaan koi aur tha.'],
-    structure: `hook (cliffhanger or strange fact) -> the story in 6-9 short lines, present tense, vivid specific details, one clear emotional turn in the middle -> the twist / realisation -> "Isse hum kya seekhte hain" in 2 plain lines connected to the viewer's own life -> last line that makes people think or comment. NO verse is chanted. Use only well-known episodes of Mahabharat/Gita/Krishna lore or a clearly modern fictional person ("Rohit naam ka ek ladka..."); never present an invented event as scripture.`,
+    id: 'twist_story', label: 'Ant mein twist', shlok: false, weight: 3,
+    desc: 'Kahani jiska aakhri hissa sab kuch palat deta hai. Log ant tak dekhte hain.',
+    hooks: ['Sabko laga wo *haar* gaya. Par...', 'Us din uski sabse badi *galti* ne use bacha liya.', 'Ye kahani *ulti* hai. Ant tak dekho.'],
+    structure: `hook sets up an expectation -> story told in 6-8 SCENE lines that lead the viewer to ONE obvious assumption -> around 70% a small hint that something is off (re-hook) -> THE TWIST: the last 2 story lines flip the meaning of everything (what they feared was what saved them / the person they blamed was ...) -> ONE short lesson line that only makes sense after the twist -> closing question`,
   },
   {
-    id: 'mystery', label: 'Raaz / Anjaani baat', shlok: false, weight: 2,
-    desc: 'Gita, Kurukshetra ya Krishna ke baare mein kam suni hui baat. Curiosity wali reel.',
+    id: 'mystery', label: 'Raaz ki kahani', shlok: false, weight: 1,
+    desc: 'Gita, Kurukshetra ya Krishna ke baare mein kam suni baat, ek kahani ki tarah khulti hui.',
     hooks: ['Gita ki ye baat *kisi ne nahi batayi*.', 'Kurukshetra mein jo hua, wo ek *sawaal* aaj bhi khada hai.', 'Gita ka pehla shabd *dharm* nahi hai, ye pata hai?'],
-    structure: `hook (a curious claim that creates an itch) -> "sunne mein ajeeb lagega, par..." -> reveal the fact step by step in 4-6 lines, each line adds one new piece -> a second smaller surprise around 60% of the video (re-hook) -> why it matters for the viewer's life (2 lines) -> last line with a question or "kya tumhe ye pata tha?". NO verse is chanted. USE ONLY the FACT BANK given below or facts you are 100% sure about; if unsure say "kaha jaata hai" and never invent numbers, names or dates.`,
-  },
-  {
-    id: 'deep_truth', label: 'Deep baat / 3 sacchaiyan', shlok: false, weight: 2,
-    desc: 'Numbered deep truths (3 baatein), har baat chhoti aur chubhne wali. Shlok chant nahi.',
-    hooks: ['3 sacchaiyan jo tumhe koi *nahi batayega*.', 'Jis din ye *samajh* aaya, sab badal gaya.', '4 baatein jo Krishna ne bina bole *sikha di*.'],
-    structure: `hook with a number -> 3 (or 4) numbered truths; each truth = a punchy statement (max 8 words) + one concrete example line -> the strongest truth LAST -> closing line asking "tumhe kaunsi sabse zyada chubhi? number likho". NO verse is chanted.`,
-  },
-  {
-    id: 'myth', label: 'Log kehte hain... Gita kehti hai', shlok: false, weight: 2,
-    desc: 'Ek galat dharna todna: "Sab sochte hain X, par Gita ka matlab Y hai".',
-    hooks: ['Log kehte hain "sab chhod do". Gita ne ye *kabhi nahi kaha*.', '"Kismat mein jo hoga wahi hoga" - ye line Gita ki *nahi* hai.', 'Gita sirf *buddhe logon* ke liye hai? Ruko.'],
-    structure: `hook stating the myth -> why people believe it (1-2 lines) -> "par asli baat ye hai" -> the real meaning, 3-4 lines, grounded in the grounding teachings -> example of the difference in daily life -> closing line challenging the viewer. NO verse is chanted.`,
-  },
-  {
-    id: 'challenge', label: 'Aaj ka challenge', shlok: false, weight: 1,
-    desc: 'Ek chhota action-challenge jo viewer aaj hi kar sake, comment mein result bataye.',
-    hooks: ['Aaj sirf *ek kaam* karo. Phone mat uthana.', 'Agle 60 second mein ye karke dekho.', 'Ye *5 minute* ka kaam tumhara mood badal dega.'],
-    structure: `hook promising a tiny challenge -> why this problem keeps happening (2 lines) -> the challenge in simple steps (max 3 steps, doable today without money or tools) -> what Krishna's idea behind it is (2 lines, grounded) -> closing line "kar ke comment mein 'done' likho". NO verse is chanted.`,
+    structure: `hook (a curious claim that creates an itch) -> reveal the secret as a story step by step in 5-7 lines, each line adds one new piece -> a second smaller surprise around 60% (re-hook) -> why it matters for the viewer's life (2 lines) -> ONE short lesson line -> last line with a question. USE ONLY the FACT BANK below or facts you are 100% sure about; if unsure say "kaha jaata hai" and never invent numbers, names or dates.`,
   },
 ];
 
-export const formatById = (id) => FORMATS.find((f) => f.id === id) || null;
-export const SHLOK_FORMATS = FORMATS.filter((f) => f.shlok).map((f) => f.id);
+// old format ids (saved plans, old reels) are mapped to a story format, so nothing breaks
+const LEGACY = { story: 'modern_story', classic: 'modern_story', decode: 'epic_story', story_shlok: 'epic_story', deep_truth: 'twist_story', myth: 'twist_story', challenge: 'modern_story' };
+export const formatById = (id) => FORMATS.find((f) => f.id === id) || FORMATS.find((f) => f.id === LEGACY[id]) || null;
+export const SHLOK_FORMATS = [];
 
 /** Safe, widely-known facts for the 'mystery' format (keeps the AI away from invented trivia). */
 export const FACT_BANK = [
@@ -99,9 +77,8 @@ export function randomTargetSec() {
 }
 
 /** weighted pick that avoids the last few formats and (optionally) formats already used the same day */
-export function pickFormat({ recent = [], sameDay = [], shlokPercent = 45 } = {}) {
-  const wantShlok = Math.random() * 100 < Math.min(100, Math.max(0, Number(shlokPercent)));
-  const pool = FORMATS.filter((f) => f.shlok === wantShlok);
+export function pickFormat({ recent = [], sameDay = [] } = {}) { // shlok is gone: only story formats
+  const pool = FORMATS;
   const weights = pool.map((f) => {
     let w = f.weight;
     const idx = recent.indexOf(f.id);

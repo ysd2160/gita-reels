@@ -1,12 +1,8 @@
 import { verseById } from '../verses.js';
 
 /** Where the narrator chants a verse: [{afterLine, verse}] (short = 1 verse, long = one per section) */
-export function getShloks(script) {
-  if (script.format === 'long') {
-    return (script.shloks || []).filter((s) => verseById(s.verseId)).map((s) => ({ afterLine: s.afterLine, verse: verseById(s.verseId) })).sort((a, b) => a.afterLine - b.afterLine);
-  }
-  const v = verseById(script.verseId);
-  return v ? [{ afterLine: script.shlokLineIndex, verse: v }] : [];
+export function getShloks(_script) {
+  return []; // shlok / chant is switched OFF everywhere: videos are stories only
 }
 
 export const DEFAULT_LAYOUT = {

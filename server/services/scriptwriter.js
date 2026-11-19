@@ -1,6 +1,6 @@
 // Script engine for 30-60 s reels.
-// - picks a FORMAT (classic shlok / decode / story / mystery / deep truth / dialogue / myth / challenge ...)
-// - picks verse candidates that were NOT used recently (so the same shlok does not repeat)
+// - every video is a STORY (modern story / Mahabharat story / dialogue / twist / mystery); no shlok, no chant
+// - picks teaching candidates (grounding) that were NOT used recently
 // - writes draft -> editor polish -> automatic quality check (word count, banned phrases, weak hook, repeated hook)
 import { config } from '../config.js';
 import { FACT_BANK, formatById, lengthPlan, pickFormat, randomTargetSec } from '../formats.js';
@@ -14,15 +14,11 @@ export const BANNED = [
 ];
 
 const IMAGE_MOOD = {
-  story: 'painterly cinematic scenes of the story, ancient India, warm firelight or dusk, silhouettes, no close-up faces',
-  story_shlok: 'painterly cinematic scenes of the story, ancient India, warm firelight or dusk, silhouettes, no close-up faces',
+  modern_story: 'cinematic scenes of modern Indian life told as a story: night city, rain on a window, a phone glowing in the dark, a desk lamp, an empty road, train platform; people only as silhouettes from behind or hands; keep the same main colours across the story',
+  epic_story: 'painterly cinematic scenes of the story, ancient India, warm firelight or dusk, silhouettes, chariots, banners, battlefield dust, no close-up faces',
   dialogue: 'two silhouettes (a chariot warrior and Krishna) in a vast battlefield dusk, then modern symbolic scenes for the modern doubts',
+  twist_story: 'cinematic story scenes with a quiet mood, then one striking symbolic image for the twist (an opening door, light through a crack, a clock stopping); silhouettes only',
   mystery: 'dark moody symbolic visuals: old manuscripts, temple stone, mist, lamps, stars, battlefield dust; a sense of secret',
-  deep_truth: 'minimal symbolic objects: empty chair, clock, mirror, rain on window, single diya, road at night; each truth gets its own object',
-  myth: 'split contrast visuals: crowd vs lone figure, closed door vs open door, noise vs silence',
-  challenge: 'simple human actions seen from behind or hands only: phone put down, breathing at sunrise, writing in a diary',
-  classic: 'emotional modern-life silhouettes (rain, night, empty road), then sacred imagery for the Krishna line',
-  decode: 'sacred imagery: manuscript with glowing Sanskrit-like patterns (no readable text), lotus, diya, chariot wheel, sunrise',
 };
 
 const wordsOf = (s) => String(s || '').replace(/\*/g, '').split(/\s+/).filter(Boolean);
@@ -58,35 +54,39 @@ export function lintScript(script, spec) {
   const first = script.lines[0]?.show || '';
   const sim = Math.max(0, ...recentHooks.map((h) => Math.max(jaccard(h, script.hookText), jaccard(h, first))));
   if (sim >= 0.5) errors.push('Hook is too similar to a recent video; make it a completely different angle');
-  if (fmt.shlok) {
-    if (!script.verseId) errors.push('This format needs a verse: set verse_id from the candidate list');
-    else if (recentVerseIds.slice(0, 20).includes(script.verseId)) errors.push(`verse ${script.verseId} was used recently; pick another candidate`);
-  }
-  if (!/[?!]|\.{3}/.test(script.lines.at(-1)?.show || '') && fmt.id !== 'challenge') errors.push('Last line should leave a question / open loop');
+  if (/\b(shlok|sloka|shloka|sanskrit|verse|adhyay)\b|\bbg[- ]?\d|श्लोक/i.test(text)) errors.push('Do not mention shlok / verse / Sanskrit / adhyay anywhere: tell a story instead');
+  if (!/[?!]|\.{3}/.test(script.lines.at(-1)?.show || '')) errors.push('Last line should leave a question / open loop');
   return errors;
 }
 
 // ------------------------------------------------------------------ prompts
 const CRAFT = `
-CRAFT RULES (the previous videos felt generic and AI-made; these rules fix that)
-1. VOICE: you are one friend talking to ONE person at night. Use "tum". Simple Hinglish a 22-year-old Indian actually speaks. Short punchy lines (4-12 words, average 8), fragments are fine. No preaching, no lecture tone, no "dosto".
-2. SCROLL-STOP HOOK: line 1 (and hook_text) must create tension or curiosity in 8 words or fewer: a specific moment, a sharp contradiction, a bold claim, a stinging question. Never start with a greeting or "aaj hum baat karenge".
-3. OPEN LOOP: promise something in the first 2 lines and pay it off later. Around the middle add a mini re-hook ("Par asli baat ab aati hai...") so people keep watching.
-4. SPECIFIC BEATS GENERIC: use concrete details (a time like 2:47 AM, an object, a place, a name, an app). At least 3 vivid specifics. Replace every abstract sentence with a scene.
-5. EVERY LINE EARNS ITS PLACE: each line adds a NEW fact, image or emotion. Never repeat an idea in other words.
-6. ONE LINE THAT HITS: include exactly one short line the viewer will screenshot or quote.
-7. LOOPABLE ENDING: the last line either answers the hook in a new way or asks a question that makes people comment or rewatch. Do NOT say "follow karo" in spoken lines (the on-screen "cta" field does that).
-8. FAITH & HONESTY: stay faithful to the teaching given below. Never invent a quote, a verse number, a number or a historical "fact". No medical, therapy or guarantee claims. Respectful tone about Krishna and the Gita.
-9. BANNED phrases: ${BANNED.join(' | ')}.
-10. ANTI-CLICHE: never use the template "Tum X nahi ho, tum bas Y ho" or "Ye X nahi, Y hai" more than once per script, and never end with a generic "Kya tum bhi...?". Say something only THIS topic could say.
-11. GOLD STANDARD for energy (match the specificity and rhythm, never copy the words):
-   hook: "2:47 AM. Phir wahi chat."
-   "2:47 AM. Tumne uska chat phir khola."
-   "Typing... delete. Typing... delete."
-   "Teen baar. Sirf ek *hi* message ke liye."
-   "Ye pyaar nahi hai. Ye *aadat* hai."
-   "Par Krishna ne ek aisi baat kahi thi jo tumhe pasand nahi aayegi..."
-   Notice: a real time, a repeated tiny action, short fragments, a sting line, then a turn. Aim for this level.`;
+STORYTELLING RULES (every video is ONE STORY, not a lecture; the previous videos felt generic and AI-made, these rules fix that)
+1. STORY FIRST: the video has a beginning, middle and end: a person (or Arjun / Karn / Krishna), what they want, what goes wrong, the turning point, the result. The viewer must keep thinking \"phir kya hua?\".
+2. TELL IT IN SCENES, present tense: \"Raat ke 2 baje, Rohit ne phir uska chat khola.\" Never summarise (\"wo bahut pareshan tha\"); show it with a time, an object, a place, a spoken line. At least 4 concrete scene details.
+3. HOOK = drop into the story at its most tense moment, 8 words or fewer. Never a greeting, never \"aaj hum baat karenge\", never a general statement.
+4. CHARACTER: give the main character a name and ONE specific detail so the viewer sees themselves. (Modern stories are clearly fictional: \"Rohit naam ka ek ladka...\".)
+5. TURN + RE-HOOK around the middle (\"Par tabhi...\" / \"Phir ek cheez badli...\"). Every line adds something NEW (a fact, an image, an emotion); never repeat an idea in other words.
+6. THE LESSON IS SHOWN BY WHAT HAPPENS and said only ONCE, in one short line near the end (the line people will screenshot). No sermon, no \"hume seekhna chahiye\", no list of advice. Krishna / the Gita may appear only INSIDE the story (a memory, someone's advice, Krishna as a character) in plain Hinglish.
+7. NO SHLOK, NO SANSKRIT, NO VERSE NUMBERS, NO CHANTING anywhere. Do not write the words shlok / verse / adhyay.
+8. VOICE: one friend talking to ONE person at night. Use \"tum\". Simple Hinglish a 22-year-old Indian speaks. Short punchy lines (4-12 words, average 8), fragments are fine. No preaching, no \"dosto\".
+9. LOOPABLE ENDING: the last line closes the story AND leaves a question or open loop that makes people comment or rewatch. Do NOT say \"follow karo\" in spoken lines (the on-screen \"cta\" field does that).
+10. FAITH & HONESTY: stay faithful to the teaching given below. Never invent a quote, a number or a historical \"fact\". Use only well-known Mahabharat / Gita episodes. No medical, therapy or guarantee claims. Respectful tone about Krishna and the Gita.
+11. BANNED phrases: ${BANNED.join(' | ')}.
+12. ANTI-CLICHE: never use the template \"Tum X nahi ho, tum bas Y ho\" or \"Ye X nahi, Y hai\" more than once per script, never end with a generic \"Kya tum bhi...?\". Say something only THIS story could say.
+13. GOLD STANDARD for energy (match the specificity, rhythm and story flow, never copy the words):
+   hook: \"Usne 11 baar resume bheja.\"
+   \"Usne 11 baar resume bheja. Ek bhi jawab nahi.\"
+   \"Aman, 24 saal. Kamre mein laptop aur thandi chai.\"
+   \"Papa ka call aaya. Usne uthaya *nahi*.\"
+   \"Raat ke 1 baje, bas screen ko ghoor raha tha.\"
+   \"Tabhi dost ka message aaya: Result tere haath mein nahi, koshish hai.\"
+   \"Par tabhi ek baat *chubh* gayi.\"
+   \"Usne 12th resume bheja. Is baar 3 galtiyan theek karke.\"
+   \"Jawab phir bhi nahi aaya. Par ab wo *dar* nahi raha.\"
+   \"Koshish hamesha tumhare haath mein thi. Result kabhi nahi.\"
+   \"14th din ek mail aayi. Subject line mein bas ek shabd...\"
+   Notice: a named person, real numbers, tiny actions, a turn, a short lesson line, an open ending.`;
 
 const FIELDS = `
 FIELDS
@@ -146,7 +146,8 @@ CHECKLIST
 5. The last line must make people comment or rewatch (question / loop back to the hook).
 6. Faithfulness: ${fmt.shlok ? 'keep one verse_id from the candidates below and make sure the line before the chant leads into it naturally; meaning must stay faithful.' : 'stay faithful to the grounding teaching; no invented facts or quotes. verse_id stays null.'}
 7. Every "image" prompt matches its line's emotion, no close-up faces, consecutive images differ. Keep "*word*" emphasis (1 per line).
-8. Keep the same JSON schema and field names.
+8. STORY CHECK: is it still ONE story with a named character, scenes, a turn near the middle and a result? If any part turned into advice or a lecture, rewrite it as a scene. No word like shlok / verse / Sanskrit.
+9. Keep the same JSON schema and field names.
 ${issues.length ? `\nKNOWN PROBLEMS THAT MUST BE FIXED:\n${issues.map((i) => `- ${i}`).join('\n')}\n` : ''}
 ${fmt.shlok ? `Verse candidates:\n${verseBlock(cands)}\n` : ''}
 DRAFT:
@@ -169,7 +170,7 @@ function normalize(raw, spec) {
  * ctx: { formatId, targetSec, notes, recentHooks, recentVerseIds, recentFormats, shlokPercent }
  */
 export async function generateScript(topic, ctx = {}) {
-  const fmt = formatById(ctx.formatId) || formatById(pickFormat({ recent: ctx.recentFormats || [], shlokPercent: ctx.shlokPercent ?? 45 }));
+  const fmt = formatById(ctx.formatId) || formatById(pickFormat({ recent: ctx.recentFormats || [] }));
   const plan = lengthPlan(ctx.targetSec || randomTargetSec(), fmt.shlok);
   const cands = candidateVerses(topic, ctx.recentVerseIds || [], fmt.shlok ? 6 : 4);
   const spec = { fmt, plan, cands, topic, recentHooks: ctx.recentHooks || [], recentVerseIds: ctx.recentVerseIds || [] };
@@ -195,7 +196,7 @@ export async function generateScript(topic, ctx = {}) {
   if (best.errs.length) console.warn(`[script] "${topic}" (${fmt.id}) still has: ${best.errs.join(' | ')}`);
   const out = best.s;
   if (fmt.shlok && !out.verseId) { // never ship a broken chant format: degrade to a no-chant story
-    out.formatId = 'story'; out.shlokLineIndex = null;
+    out.formatId = 'modern_story'; out.shlokLineIndex = null;
     console.warn(`[script] "${topic}": no verse picked, saved as a no-shlok script`);
   }
   out.estimatedSec = estimateSec(out);

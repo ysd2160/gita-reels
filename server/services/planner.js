@@ -1,5 +1,5 @@
 import { Plan, Reel, Setting, Topic, SEED_LONG, SEED_TOPICS } from '../models.js';
-import { extractWeekPlan, generateLongScript, generatePlanTopics, generateWeekTopics } from './gemini.js';
+import { extractWeekPlan, generateLongScript, generatePlanTopics, generateWeekTopics, scriptFromText } from './gemini.js';
 import { formatById, pickFormat } from '../formats.js';
 import { recentContext, structureOwnScript, writeShortScript } from './scriptContext.js';
 import { getSettings } from './settings.js';
@@ -14,6 +14,8 @@ const addDays = (iso, n) => new Date(Date.parse(`${iso}T00:00:00Z`) + n * 864000
 const hhmm = () => istNow().toISOString().slice(11, 16);
 export const toDate = (date, time) => new Date(Date.parse(`${date}T${time}:00Z`) - IST); // IST wall-clock -> real Date
 
+// daily hard cap: never below 4, so "3 reels + 1 long video" always fits even if an old .env still says MAX_PER_DAY=3
+const DAY_CAP = Math.max(config.maxPerDay, 4);
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
 /** Make sure every day of the next N days has its planned items (topics chosen by AI in advance). */
@@ -21,9 +23,9 @@ export async function ensurePlan({ brief = '' } = {}) {
   const st = await getSettings();
   const start = todayIST();
   const want = [];
-  // hard cap: never more than config.maxPerDay (3) videos a day, whatever is saved in Settings
-  const nShort = Math.min(Number(st.shorts) || 0, config.maxPerDay);
-  const nLong = Math.min(Number(st.long) || 0, config.maxPerDay - nShort);
+  // hard cap: never more than DAY_CAP videos a day, whatever is saved in Settings
+  const nShort = Math.min(Number(st.shorts) || 0, DAY_CAP);
+  const nLong = Math.min(Number(st.long) || 0, DAY_CAP - nShort);
   for (let d = 0; d < st.planDays; d++) {
     const date = addDays(start, d);
     let have = await Plan.find({ date }).sort({ slot: 1 });
@@ -39,12 +41,12 @@ export async function ensurePlan({ brief = '' } = {}) {
   }
   if (!want.length) return 0;
   const used = [...(await Plan.find().select('topic')).map((p) => p.topic), ...(await Reel.find().sort({ createdAt: -1 }).limit(60).select('topic')).map((r) => r.topic)];
-  // every short gets a FORMAT (story / mystery / classic shlok ...): never the same one twice in a day, recent ones are avoided
+  // every short gets a FORMAT (modern story / Mahabharat story / twist / dialogue ...): never the same one twice in a day, recent ones are avoided
   const recentFormats = (await recentContext()).recentFormats;
   const shorts = want.filter((w) => w.kind === 'short');
   for (const w of shorts) {
     const sameDay = [...(await Plan.find({ date: w.date, kind: 'short' }).select('formatId')).map((p) => p.formatId), ...shorts.filter((x) => x.date === w.date && x.formatId).map((x) => x.formatId)].filter(Boolean);
-    w.formatId = pickFormat({ recent: [...recentFormats], sameDay, shlokPercent: st.shlokPercent });
+    w.formatId = pickFormat({ recent: [...recentFormats], sameDay });
     recentFormats.unshift(w.formatId);
   }
   let topics = { shorts: [], long: [] };
@@ -70,7 +72,7 @@ export async function newTopicFor(item) {
 /** Start generation for one plan item. */
 export async function runPlanItem(item) {
   if (!item || item.status !== 'planned') return null;
-  if ((await Plan.countDocuments({ date: item.date, status: { $in: ['generating', 'done'] } })) >= config.maxPerDay) return null; // max videos per day reached
+  if ((await Plan.countDocuments({ date: item.date, status: { $in: ['generating', 'done'] } })) >= DAY_CAP) return null; // max videos per day reached
   const when = toDate(item.date, item.publishTime || '12:00');
   // posted at the planned time; if that time has already passed it goes out as soon as the video is ready
   const reel = await Reel.create({ topic: item.topic, format: item.kind, planId: item._id, formatId: item.formatId, targetSec: item.targetSec, notes: item.notes, ...(item.script ? { script: item.script } : {}), scheduledFor: when.getTime() > Date.now() ? when : new Date() });
@@ -86,7 +88,7 @@ export async function writeScriptForItem(item) {
   let script;
   if (item.kind === 'long') {
     const recent = (await Reel.find({ format: 'long' }).sort({ createdAt: -1 }).limit(15).select('script')).map((r) => r.script?.hookText || r.script?.title).filter(Boolean);
-    script = await generateLongScript(item.topic, recent);
+    script = item.sourceText ? await scriptFromText(item.sourceText, item.topic, 'long') : await generateLongScript(item.topic, recent, item.notes);
   } else if (item.sourceText) script = await structureOwnScript({ text: item.sourceText, topic: item.topic }); // creator's own script from the plan: kept word for word
   else script = await writeShortScript({ topic: item.topic, formatId: item.formatId, targetSec: item.targetSec, notes: item.notes, excludePlanId: item._id });
   return script;
@@ -147,15 +149,20 @@ export async function importWeekPlan({ text = '', file = null, startDate = today
   }
   const created = [];
   for (const [date, list] of [...byDate].sort(([a], [b]) => a.localeCompare(b))) {
-    await Plan.deleteMany({ date, kind: 'short', status: 'planned', reelId: null }); // replace what was only planned
+    if (list.some((x) => x.kind !== 'long')) await Plan.deleteMany({ date, kind: 'short', status: 'planned', reelId: null }); // replace what was only planned
+    if (list.some((x) => x.kind === 'long')) await Plan.deleteMany({ date, kind: 'long', status: 'planned', reelId: null });
     const kept = await Plan.find({ date }).sort({ slot: 1 }); // already generating / done / skipped stay
-    const room = Math.max(0, config.maxPerDay - kept.filter((k) => k.status !== 'skipped').length);
-    const take = list.slice(0, room); skipped += list.length - take.length;
+    const room = Math.max(0, DAY_CAP - kept.filter((k) => k.status !== 'skipped').length);
+    const take = [...list.filter((x) => x.kind !== 'long'), ...list.filter((x) => x.kind === 'long').slice(0, 1)].slice(0, room); skipped += list.length - take.length; // at most 1 long video a day
     const sameDay = kept.map((k) => k.formatId).filter(Boolean);
     const recent = (await recentContext()).recentFormats;
-    let slot = kept.reduce((m, k) => Math.max(m, k.slot ?? -1), -1) + 1;
+    let slot = kept.filter((k) => k.kind === 'short').reduce((m, k) => Math.max(m, k.slot ?? -1), -1) + 1;
     for (const it of take) {
-      const formatId = it.formatId && formatById(it.formatId) ? it.formatId : pickFormat({ recent, sameDay, shlokPercent: st.shlokPercent });
+      if (it.kind === 'long') { // the 5-minute story video: YouTube only
+        created.push(await Plan.create({ date, kind: 'long', slot: 10, publishTime: st.longSlot, topic: it.topic, notes: it.notes || '', sourceText: it.scriptText || '' }));
+        continue;
+      }
+      const formatId = it.formatId && formatById(it.formatId) ? it.formatId : pickFormat({ recent, sameDay });
       sameDay.push(formatId); recent.unshift(formatId);
       created.push(await Plan.create({
         date, kind: 'short', slot, publishTime: st.shortSlots[slot] || st.shortSlots.at(-1) || '12:00',
@@ -165,7 +172,7 @@ export async function importWeekPlan({ text = '', file = null, startDate = today
     }
   }
   const queued = await prewriteScripts([...byDate.keys()]);
-  return { created: created.length, skipped, days: maxDay, scriptsQueued: queued, items: created.map((c) => ({ date: c.date, topic: c.topic, formatId: c.formatId, ownScript: !!c.sourceText })) };
+  return { created: created.length, skipped, days: maxDay, scriptsQueued: queued, items: created.map((c) => ({ date: c.date, topic: c.topic, formatId: c.formatId, ownScript: !!c.sourceText, kind: c.kind })) };
 }
 
 export async function runDay(date) {

@@ -11,7 +11,58 @@ import { stopIf } from './control.js';
 const endPunct = (s) => (/[।?!.…]$/.test(s.trim()) ? s.trim() : `${s.trim()}।`);
 const sha = (s) => crypto.createHash('sha1').update(s).digest('hex').slice(0, 10);
 const exists = (f) => fs.access(f).then(() => true, () => false);
-const REQ_LIMIT = 2200; // chars per TTS request (Sarvam allows 2500)
+const REQ_LIMIT = 1300; // chars per TTS request: a long script is voiced in small parts (more reliable than one giant request)
+const CACHE_DAYS = 4;
+
+/** Cut a long block of lines into pieces of ~REQ_LIMIT chars, preferably at chapter starts, never inside a line. */
+function splitBlock(b, script) {
+  const len = (i) => script.lines[i].speak.length + 2;
+  const starts = new Set((script.sections || []).map((s) => s.startLine));
+  const pieces = [];
+  let cur = { first: b.first, last: b.first - 1, chars: 0 };
+  for (let i = b.first; i <= b.last; i++) {
+    const over = cur.chars + len(i) > REQ_LIMIT;
+    const chapter = starts.has(i) && cur.chars > REQ_LIMIT * 0.45;
+    if (cur.last >= cur.first && (over || chapter)) { pieces.push(cur); cur = { first: i, last: i - 1, chars: 0 }; }
+    cur.last = i; cur.chars += len(i);
+  }
+  pieces.push(cur);
+  if (pieces.length > 1 && pieces.at(-1).chars < 250 && pieces.at(-2).chars + pieces.at(-1).chars <= REQ_LIMIT * 1.3) { // a tiny tail joins the part before it
+    const tail = pieces.pop();
+    pieces.at(-1).last = tail.last; pieces.at(-1).chars += tail.chars;
+  }
+  return pieces.map((p) => ({ first: p.first, last: p.last }));
+}
+
+/** every finished part is saved: if the video fails / is paused later, finished parts are NOT generated (or paid) again */
+async function cachedSpeak(text) {
+  const base = path.join(config.paths.storage, 'cache', 'tts');
+  await fs.mkdir(base, { recursive: true });
+  const key = sha(`${ttsSignature()}|${text}`);
+  const wav = path.join(base, `${key}.wav`), meta = path.join(base, `${key}.json`);
+  if ((await exists(wav)) && (await exists(meta))) {
+    try {
+      const m = JSON.parse(await fs.readFile(meta, 'utf8'));
+      const { pcm, rate } = parseWav(await fs.readFile(wav));
+      return { pcm, rate, speed: m.speed, provider: m.provider };
+    } catch { /* regenerate */ }
+  }
+  const r = await speakBatch(text);
+  if (r) {
+    await fs.writeFile(wav, toWav(r.pcm, r.rate));
+    await fs.writeFile(meta, JSON.stringify({ speed: r.speed, provider: r.provider }));
+  }
+  return r;
+}
+async function sweepCache() {
+  const base = path.join(config.paths.storage, 'cache', 'tts');
+  try {
+    for (const f of await fs.readdir(base)) {
+      const p = path.join(base, f);
+      if (Date.now() - (await fs.stat(p)).mtimeMs > CACHE_DAYS * 86400e3) await fs.rm(p, { force: true });
+    }
+  } catch { /* no cache yet */ }
+}
 
 async function chantClip(verse, dir) {
   if (!config.tts.chant) return null;
@@ -36,6 +87,7 @@ async function chantClip(verse, dir) {
  */
 export async function buildVoice(script, dir, { signal } = {}) {
   await fs.mkdir(dir, { recursive: true });
+  sweepCache().catch(() => {});
   const N = script.lines.length;
   const shloks = getShloks(script);
   const afterMap = new Map(shloks.map((s) => [s.afterLine, s.verse]));
@@ -45,6 +97,8 @@ export async function buildVoice(script, dir, { signal } = {}) {
   let first = 0;
   for (const s of shloks) { blocks.push({ first, last: s.afterLine }); first = s.afterLine + 1; }
   if (first <= N - 1) blocks.push({ first, last: N - 1 });
+  const parts = blocks.flatMap((b) => splitBlock(b, script)); // a long script (no chants) becomes several small parts
+  blocks.length = 0; blocks.push(...parts);
   const chars = (b) => script.lines.slice(b.first, b.last + 1).reduce((a, l) => a + l.speak.length + 2, 0);
   const reqs = [];
   for (const b of blocks) {
@@ -58,7 +112,8 @@ export async function buildVoice(script, dir, { signal } = {}) {
     stopIf(signal); // Pause works between voice requests too
     const f0 = req.blocks[0].first, f1 = req.blocks.at(-1).last;
     const reqLines = script.lines.slice(f0, f1 + 1);
-    const r = await speakBatch(reqLines.map((l) => endPunct(l.speak)).join(' '));
+    if (reqs.length > 1) console.log(`[voice] part ${ri + 1}/${reqs.length} (${req.chars} chars)`);
+    const r = await cachedSpeak(reqLines.map((l) => endPunct(l.speak)).join(' '));
     if (r) {
       provider = r.provider;
       const pcm = normalize(r.pcm);
