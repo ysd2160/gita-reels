@@ -6,6 +6,7 @@ import { fade, findLineEdges, lineWeight, normalize, sliceSec, toWav, trimSilenc
 import { speakBatch, edgeLine, ttsSignature, edgeAllowed, lastTtsError } from './tts.js';
 import { CHANT_HOLD, GAP_LINE, GAP_SPEECH, LEAD_IN, TAIL, wordTimings } from './timeline.js';
 import { getShloks } from './shape.js';
+import { stopIf } from './control.js';
 
 const endPunct = (s) => (/[।?!.…]$/.test(s.trim()) ? s.trim() : `${s.trim()}।`);
 const sha = (s) => crypto.createHash('sha1').update(s).digest('hex').slice(0, 10);
@@ -33,7 +34,7 @@ async function chantClip(verse, dir) {
  * script -> audio files + exact timeline. Works for shorts (1 chant) and long videos (many chants).
  * Returns { audio, lines:[{start,end,words}], shloks:[{verseId,from,to}], durationSec, provider, chanted }
  */
-export async function buildVoice(script, dir) {
+export async function buildVoice(script, dir, { signal } = {}) {
   await fs.mkdir(dir, { recursive: true });
   const N = script.lines.length;
   const shloks = getShloks(script);
@@ -54,6 +55,7 @@ export async function buildVoice(script, dir) {
   const chunks = [];
   let provider = 'edge';
   for (const [ri, req] of reqs.entries()) {
+    stopIf(signal); // Pause works between voice requests too
     const f0 = req.blocks[0].first, f1 = req.blocks.at(-1).last;
     const reqLines = script.lines.slice(f0, f1 + 1);
     const r = await speakBatch(reqLines.map((l) => endPunct(l.speak)).join(' '));
@@ -88,6 +90,7 @@ export async function buildVoice(script, dir) {
 
   const chants = new Map();
   for (const s of shloks) {
+    stopIf(signal);
     try { const c = await chantClip(s.verse, dir); if (c) chants.set(s.afterLine, { ...c, verse: s.verse }); } catch (e) { console.warn(`[chant] ${s.verse.id} skipped: ${e.message}`); }
   }
 

@@ -2,6 +2,7 @@ import 'dotenv/config';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { envKeys, parseList, registerKeys } from './services/keypool.js';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const num = (v, d) => (v === undefined || v === '' ? d : Number(v));
@@ -9,19 +10,32 @@ const bool = (v, d) => (v === undefined || v === '' ? d : v === 'true');
 const list = (v, d) => (v || d).split(',').map((s) => s.trim()).filter(Boolean);
 const env = process.env;
 
+// ---- API keys: every provider may have several keys (comma list or _2.._9); they rotate when one hits its limit ----
+const cfPairs = [
+  ...parseList(env.CLOUDFLARE_ACCOUNTS), // acc1:token1,acc2:token2
+  ...(env.CLOUDFLARE_ACCOUNT_ID && env.CLOUDFLARE_API_TOKEN ? [`${env.CLOUDFLARE_ACCOUNT_ID}:${env.CLOUDFLARE_API_TOKEN}`] : []),
+  ...[2, 3, 4, 5, 6, 7, 8, 9].filter((i) => env[`CLOUDFLARE_ACCOUNT_ID_${i}`] && env[`CLOUDFLARE_API_TOKEN_${i}`]).map((i) => `${env[`CLOUDFLARE_ACCOUNT_ID_${i}`]}:${env[`CLOUDFLARE_API_TOKEN_${i}`]}`),
+];
+const K = {
+  gemini: envKeys(env, 'GEMINI_API_KEY'), sarvam: envKeys(env, 'SARVAM_API_KEY'), elevenlabs: envKeys(env, 'ELEVENLABS_API_KEY'),
+  google: envKeys(env, 'GOOGLE_TTS_API_KEY'), pexels: envKeys(env, 'PEXELS_API_KEY'), pixabay: envKeys(env, 'PIXABAY_API_KEY'),
+  pollinations: envKeys(env, 'POLLINATIONS_KEY'), cloudflare: [...new Set(cfPairs)],
+};
+for (const [n, k] of Object.entries(K)) registerKeys(n, n === 'pollinations' && !k.length ? [''] : k); // pollinations also works without a key
+
 export const config = {
   port: num(env.PORT, 4000),
   host: env.HOST || '127.0.0.1', // 127.0.0.1 = only nginx / SSH tunnel can reach it (safe on AWS)
   publicUrl: (env.PUBLIC_URL || '').replace(/\/$/, ''), // e.g. https://reels.yourdomain.com (needed for YouTube connect on a server)
   auth: { user: env.DASHBOARD_USER || '', pass: env.DASHBOARD_PASS || '' }, // basic-auth for the dashboard
-  maxPerDay: num(env.MAX_PER_DAY, 3), // hard cap: never plan/make more than this many videos a day
+  maxPerDay: num(env.MAX_PER_DAY, 4), // hard cap: never plan/make more than this many videos a day
   mongoUri: env.MONGODB_URI || 'mongodb://127.0.0.1:27017/gita_reels',
   channelName: env.CHANNEL_NAME || '',
   youtube: { clientId: env.YOUTUBE_CLIENT_ID || '', clientSecret: env.YOUTUBE_CLIENT_SECRET || '' },
   instagram: { userId: env.IG_USER_ID || '', token: env.IG_ACCESS_TOKEN || '' },
 
   gemini: {
-    key: env.GEMINI_API_KEY || '',
+    key: K.gemini[0] || '',
     model: env.GEMINI_MODEL || 'gemini-3.5-flash-lite',
     // optional stronger model used ONLY for writing scripts (quality matters most there); empty = same as GEMINI_MODEL
     scriptModel: env.GEMINI_SCRIPT_MODEL || '',
@@ -41,14 +55,14 @@ export const config = {
       chantStyle: 'Chant this Sanskrit shloka slowly in a deep, resonant, devotional voice, with a gentle melodic cadence and a pause at the end of each line',
     },
     sarvam: {
-      key: env.SARVAM_API_KEY || '',
+      key: K.sarvam[0] || '',
       model: env.SARVAM_MODEL || 'bulbul:v3',
       speaker: env.SARVAM_SPEAKER || 'shubh',
       chantSpeaker: env.SARVAM_CHANT_SPEAKER || '',
       pace: num(env.SARVAM_PACE, 1.05),
     },
-    elevenlabs: { key: env.ELEVENLABS_API_KEY || '', voiceId: env.ELEVENLABS_VOICE_ID || '', model: env.ELEVENLABS_MODEL || 'eleven_multilingual_v2' },
-    google: { key: env.GOOGLE_TTS_API_KEY || '', voice: env.GOOGLE_TTS_VOICE || 'hi-IN-Chirp3-HD-Charon' },
+    elevenlabs: { key: K.elevenlabs[0] || '', voiceId: env.ELEVENLABS_VOICE_ID || '', model: env.ELEVENLABS_MODEL || 'eleven_multilingual_v2' },
+    google: { key: K.google[0] || '', voice: env.GOOGLE_TTS_VOICE || 'hi-IN-Chirp3-HD-Charon' },
     edge: {
       python: env.PYTHON_BIN || (process.platform === 'win32' ? 'python' : 'python3'),
       voice: env.EDGE_VOICE || 'hi-IN-MadhurNeural',
@@ -61,12 +75,12 @@ export const config = {
   images: {
     providers: list(env.IMAGE_PROVIDERS, 'cloudflare,gemini,pollinations'),
     concurrency: num(env.IMAGE_CONCURRENCY, 3),
-    cloudflare: { account: env.CLOUDFLARE_ACCOUNT_ID || '', token: env.CLOUDFLARE_API_TOKEN || '' },
+    cloudflare: { account: K.cloudflare[0]?.split(':')[0] || '', token: K.cloudflare[0]?.split(':').slice(1).join(':') || '' },
     geminiModel: env.GEMINI_IMAGE_MODEL || 'gemini-2.5-flash-image',
-    pollinationsKey: env.POLLINATIONS_KEY || '',
+    pollinationsKey: K.pollinations[0] || '',
   },
-  pexels: { key: env.PEXELS_API_KEY || '' },
-  pixabay: { key: env.PIXABAY_API_KEY || '' },
+  pexels: { key: K.pexels[0] || '' },
+  pixabay: { key: K.pixabay[0] || '' },
 
   music: { mode: env.MUSIC_MODE || 'auto', volume: num(env.MUSIC_VOLUME, 0.22) }, // auto | synth | off
 
@@ -79,7 +93,7 @@ export const config = {
   cron: { enabled: env.ENABLE_CRON === 'true', expr: env.CRON_GENERATE || '0 2 * * *', perDay: num(env.REELS_PER_DAY, 2) },
   windows: env.POST_WINDOWS || '06:30-08:00,21:00-22:30',
 
-  queue: { prep: num(env.PREP_CONCURRENCY, 2) },
+  queue: { jobMinutes: num(env.JOB_TIMEOUT_MIN, 40), jobMinutesLong: num(env.JOB_TIMEOUT_MIN_LONG, 150) }, // one video at a time; a stuck one is stopped after this long
   render: {
     concurrency: num(env.RENDER_CONCURRENCY, Math.max(1, Math.floor(os.cpus().length / 3))),
     preset: env.X264_PRESET || 'veryfast',

@@ -50,3 +50,11 @@ Audio, AI images, uploads and music of a video stay until you **approve** it (so
 - **Better scripts**: draft -> editor polish -> automatic quality check (word count, banned generic phrases, weak/repeated hook, last line open loop) with one repair pass. Optional `GEMINI_SCRIPT_MODEL` in `.env` uses a stronger model for scripts only.
 - **Week plan** (Plan page): upload a PDF / photo / txt or paste text -> AI reads it, puts every reel in the right day (topic, format, your notes; a full script in your plan is used word for word) and writes the scripts in the background. Or press *AI se poora week plan banao* (optionally with an instruction like "is hafte anger aur karma par").
 - Shloks added in v5 (2.13, 2.20, 2.23, 2.27, 2.40, 2.48, 2.50, 2.62, 2.66, 2.71, 3.8, 3.21, 3.35, 3.37, 4.11, 4.38, 6.6, 6.17, 6.26, 9.26, 16.21, 18.78): please compare the Sanskrit once with a Gita Press edition before publishing.
+
+
+## Multiple API keys, one video at a time, pause / resume
+
+- **Key rotation:** every provider accepts several keys (`GEMINI_API_KEYS=k1,k2,k3,k4,k5`, same for `SARVAM`, `ELEVENLABS`, `GOOGLE_TTS`, `PEXELS`, `PIXABAY`, `POLLINATIONS`; Cloudflare as `CLOUDFLARE_ACCOUNTS=acc1:token1,acc2:token2`). When a key hits its limit the next one is used; a limited key rests (60 s, then 5 min, 15 min, 1 h, 6 h; daily quotas until midnight UTC) and comes back by itself. Settings -> "API keys" shows how many are limited.
+- **Daily plan:** 3 shorts (YouTube + Instagram) and 1 long video (~5 min, YouTube only). Settings -> "Long videos per day" must be 1 (it is a saved setting; the default only applies if you never saved it).
+- **One video at a time:** the queue runs script -> voice -> images -> music -> render for one video, then the next.
+- **Pause / Resume:** "Roko" stops a video and keeps its finished steps (script, voice, every finished image). "Resume" continues from that step. A render that is paused restarts from frame 0, everything before it is kept. "Abhi chalao" pauses the running video and starts this one now. The same saved steps are used after a crash or server restart.

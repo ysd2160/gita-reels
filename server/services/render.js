@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { bundle } from '@remotion/bundler';
-import { renderMedia, selectComposition } from '@remotion/renderer';
+import { makeCancelSignal, renderMedia, selectComposition } from '@remotion/renderer';
 import { ROOT, config } from '../config.js';
 
 let bundlePromise = null;
@@ -11,17 +11,23 @@ function getBundle() {
   return bundlePromise;
 }
 
-export async function renderReel(inputProps, outputLocation, onProgress = () => {}) {
+export async function renderReel(inputProps, outputLocation, onProgress = () => {}, signal) {
   const serveUrl = await getBundle(); // bundled once per server start
   const composition = await selectComposition({ serveUrl, id: inputProps.format === 'long' ? 'Long' : 'Reel', inputProps });
-  await renderMedia({
-    composition, serveUrl, inputProps, outputLocation,
-    codec: 'h264',
-    crf: config.render.crf,
-    x264Preset: config.render.preset,
-    concurrency: config.render.concurrency,
-    hardwareAcceleration: 'if-possible',
-    offthreadVideoCacheSizeInBytes: 512 * 1024 * 1024,
-    onProgress: ({ progress }) => onProgress(progress),
-  });
+  const { cancelSignal, cancel } = makeCancelSignal(); // Pause = cancel the render
+  const onAbort = () => cancel();
+  if (signal?.aborted) cancel(); else signal?.addEventListener('abort', onAbort, { once: true });
+  try {
+    await renderMedia({
+      composition, serveUrl, inputProps, outputLocation,
+      codec: 'h264',
+      crf: config.render.crf,
+      x264Preset: config.render.preset,
+      concurrency: config.render.concurrency,
+      hardwareAcceleration: 'if-possible',
+      offthreadVideoCacheSizeInBytes: 512 * 1024 * 1024,
+      cancelSignal,
+      onProgress: ({ progress }) => onProgress(progress),
+    });
+  } finally { signal?.removeEventListener('abort', onAbort); }
 }

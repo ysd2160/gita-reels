@@ -8,7 +8,7 @@ const reelSchema = new Schema(
     status: {
       type: String,
       default: 'queued',
-      enum: ['queued', 'scripting', 'voice', 'visuals', 'render_wait', 'rendering', 'ready', 'approved', 'rejected', 'published', 'failed'],
+      enum: ['queued', 'scripting', 'voice', 'visuals', 'render_wait', 'rendering', 'ready', 'approved', 'rejected', 'published', 'failed', 'paused'],
     },
     progress: { type: Number, default: 0 },
     error: String,
@@ -24,6 +24,8 @@ const reelSchema = new Schema(
     planId: Schema.Types.ObjectId,
     genAt: Date, // when the video finished rendering (start of the 24h file-retention clock)
     purgedAt: Date, // all files were deleted by the storage keeper (record + post links stay)
+    pausedStage: String, // where a paused video stopped (scripting | voice | visuals | render_wait)
+    work: Schema.Types.Mixed, // saved steps of an unfinished video { voice, style, scenes } -> resume continues from here
     retries: { type: Number, default: 0 }, // automatic re-tries after a failed generation
     formatId: String, // reel format (classic / story / mystery ...), see server/formats.js
     targetSec: Number, // wanted length 30-60 s

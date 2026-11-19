@@ -1,35 +1,45 @@
 import { config } from '../config.js';
 import { VERSES, verseById } from '../verses.js';
 import { FORMATS, formatById } from '../formats.js';
+import { withKeys } from './keypool.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export async function callGemini({ contents, system, temperature = 0.9, model }) {
-  if (!config.gemini.key) throw new Error('GEMINI_API_KEY .env mein set nahi hai');
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model || config.gemini.model}:generateContent`;
+  const m = model || config.gemini.model;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`;
   let lastErr;
   for (let attempt = 1; attempt <= 4; attempt++) {
     try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': config.gemini.key },
-        body: JSON.stringify({
-          contents,
-          ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
-          generationConfig: { temperature, responseMimeType: 'application/json' },
-        }),
+      // several keys: when one hits its limit the next key is used automatically
+      const data = await withKeys('gemini', `gemini:${m}`, async (key) => {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+          body: JSON.stringify({
+            contents,
+            ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
+            generationConfig: { temperature, responseMimeType: 'application/json' },
+          }),
+        });
+        if (!res.ok) {
+          const err = new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 300)}`);
+          err.status = res.status; // 401/403/429 -> next key
+          err.retry = res.status >= 500;
+          throw err;
+        }
+        return res.json();
       });
-      if (!res.ok) {
-        const err = new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 300)}`);
-        err.retry = res.status === 429 || res.status >= 500;
-        throw err;
-      }
-      const data = await res.json();
       const text = (data.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('');
       if (!text) throw new Error('Gemini ne empty response diya');
       return JSON.parse(text.replace(/^```json\s*|```$/g, '').trim());
     } catch (e) {
       lastErr = e;
+      if (e.allLimited) { // every key is resting: wait for the first one only if it is back soon
+        if (!(e.retryInMs <= 65000)) break;
+        await sleep(e.retryInMs + 500);
+        continue;
+      }
       if (e.retry === false) break;
       await sleep(1500 * attempt);
     }

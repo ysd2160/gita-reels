@@ -169,7 +169,7 @@ export async function importWeekPlan({ text = '', file = null, startDate = today
 }
 
 export async function runDay(date) {
-  const items = await Plan.find({ date, status: 'planned' }).sort({ slot: -1 }); // long video first (slowest), then shorts
+  const items = (await Plan.find({ date, status: 'planned' })).sort((a, b) => String(a.publishTime || '').localeCompare(String(b.publishTime || ''))); // one video at a time, in publish-time order
   const made = [];
   for (const it of items) made.push(await runPlanItem(it));
   return made.filter(Boolean).length;

@@ -12,7 +12,9 @@ import { makeMusic } from './music.js';
 import { renderReel } from './render.js';
 import { nextSlot } from './scheduler.js';
 import { DEFAULT_LAYOUT } from './shape.js';
+import { PausedError, isTimeout, stopIf } from './control.js';
 
+const exists = (f) => fs.access(f).then(() => true, () => false);
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const OVERLAP = 0.24;
 const gen = (id) => path.join(config.paths.storage, 'gen', String(id));
@@ -69,13 +71,15 @@ export function planScenes(lines, durationSec, format = 'short') {
   return scenes;
 }
 
-async function attachVisuals(scenes, script, style, id, usedIds, shloks) {
+async function attachVisuals(scenes, script, style, id, usedIds, shloks, { signal, persist = () => {} } = {}) {
   const art = ART_STYLES.find((a) => a.id === style.artStyle) || ART_STYLES[0];
   const dir = gen(id);
   const motions = ['in', 'out', 'left', 'right', 'up'];
   const hasAI = imageProvidersAvailable().length > 0;
 
   await mapLimit(scenes, config.images.concurrency, async (sc, i) => {
+    if (signal?.aborted) return; // paused: remaining scenes are done after Resume
+    if (sc.type && sc.type !== 'none') return; // already finished before a pause / restart
     const line = script.lines[sc.line];
     const need = sc.end - sc.start + OVERLAP + 0.4;
     const mid = (sc.start + sc.end) / 2;
@@ -95,43 +99,82 @@ async function attachVisuals(scenes, script, style, id, usedIds, shloks) {
     sc.url = v?.url || '';
     sc.vid = v?.vid || null;
     sc.trim = v?.type === 'video' ? +Math.max(0, Math.random() * Math.max(0, (v.duration || 0) - need - 0.2)).toFixed(1) : 0;
+    persist(); // every finished scene is saved, so a pause / crash never loses it
   });
+  stopIf(signal);
   let last = '';
   scenes.forEach((sc) => { sc.motion = pick(motions.filter((m) => m !== last)); last = sc.motion; });
+  persist();
   return scenes;
 }
 
-/** STAGE 1: script -> voice -> visuals -> music. Saves the editable `project` and hands over to rendering. */
-export async function prepareReel(id) {
+// a saved scene is only reusable if its file still exists
+async function sceneFileOk(sc) {
+  const m = /\/media\/(.+)$/.exec(sc.url || '');
+  return m ? exists(path.join(config.paths.storage, decodeURIComponent(m[1]))) : true;
+}
+
+/**
+ * STAGE 1: script -> voice -> visuals -> music. Saves the editable `project` and hands over to rendering.
+ * Every finished step is saved in reel.work, so Pause / a crash / a restart continues from the same step, not from zero.
+ */
+export async function prepareReel(id, { signal } = {}) {
   const reel = await Reel.findById(id);
   if (!reel) return false;
   const format = reel.format || 'short';
   const log = (m) => console.log(`[${format} ${String(id).slice(-6)}] ${m}`);
+  const work = reel.work || {};
   try {
-    await set(reel, { status: 'scripting', progress: 3, error: null, project: null });
+    stopIf(signal);
+    await set(reel, { status: reel.script ? 'voice' : 'scripting', progress: Math.max(reel.progress || 0, 3), error: null, project: null, pausedStage: null });
     if (!reel.script) {
       const recent = (await Reel.find({ script: { $ne: null }, format }).sort({ createdAt: -1 }).limit(15).select('script'))
         .map((r) => r.script?.hookText || r.script?.title).filter(Boolean);
       log(format === 'long' ? 'long script (outline + parts)...' : 'script (2-pass)...');
       await set(reel, { script: format === 'long' ? await generateLongScript(reel.topic, recent) : await writeShortScript({ topic: reel.topic, formatId: reel.formatId, targetSec: reel.targetSec, notes: reel.notes }), progress: 12 });
     }
+    stopIf(signal);
     const script = { ...reel.script, format };
     // creators write Hinglish only; the narrator gets Hindi-in-Devanagari + English-in-Latin (much more natural for TTS)
     if (await ensureVoiceText(script)) await set(reel, { script, progress: 15 });
 
-    await set(reel, { status: 'voice', progress: 18 });
-    await fs.rm(audioDir(id), { recursive: true, force: true });
-    log('voice...');
-    const voice = await buildVoice(script, audioDir(id));
-    log(`voice ok via ${voice.provider}${voice.chanted ? ' + chants' : ''}, ${voice.durationSec}s (${script.formatId || 'classic'}${script.verseId ? '' : ', no shlok'})`);
+    // ---- voice (saved: a resumed video does not pay for the voice again)
+    let voice = work.voice;
+    if (voice && !(await Promise.all(voice.audio.map((a) => exists(a.file)))).every(Boolean)) voice = null;
+    if (voice) log('voice: pehle ka kaam use ho raha hai (resume)');
+    else {
+      stopIf(signal);
+      await set(reel, { status: 'voice', progress: Math.max(reel.progress || 0, 18) });
+      await fs.rm(audioDir(id), { recursive: true, force: true });
+      log('voice...');
+      voice = await buildVoice(script, audioDir(id), { signal });
+      await Reel.updateOne({ _id: id }, { $set: { 'work.voice': voice } });
+      log(`voice ok via ${voice.provider}${voice.chanted ? ' + chants' : ''}, ${voice.durationSec}s (${script.formatId || 'classic'}${script.verseId ? '' : ', no shlok'})`);
+    }
     if (format === 'short' && (voice.durationSec > 61 || voice.durationSec < 25)) log(`WARNING: ${voice.durationSec}s is outside the 30-60 s target. Edit the script (shorter/longer) and press New look.`);
 
-    await set(reel, { status: 'visuals', progress: 38, durationSec: voice.durationSec });
-    const style = reel.style?.artStyle ? reel.style : pickStyle((await Reel.findOne({ _id: { $ne: id }, style: { $ne: null } }).sort({ createdAt: -1 }))?.style);
+    // ---- visuals (every finished scene is saved)
+    stopIf(signal);
+    await set(reel, { status: 'visuals', progress: Math.max(reel.progress || 0, 38), durationSec: voice.durationSec });
+    let style = work.style;
+    if (!style) {
+      style = reel.style?.artStyle ? reel.style : pickStyle((await Reel.findOne({ _id: { $ne: id }, style: { $ne: null } }).sort({ createdAt: -1 }))?.style);
+      await Reel.updateOne({ _id: id }, { $set: { 'work.style': style } });
+    }
     const usedIds = new Set((await Reel.find({ _id: { $ne: id } }).sort({ createdAt: -1 }).limit(12).select('visualIds')).flatMap((r) => r.visualIds || []));
-    const scenes = await attachVisuals(planScenes(voice.lines, voice.durationSec, format), script, style, id, usedIds, voice.shloks);
+    const scenes = Array.isArray(work.scenes) && work.scenes.length ? work.scenes : planScenes(voice.lines, voice.durationSec, format);
+    for (const sc of scenes) if (sc.type && sc.type !== 'none' && !(await sceneFileOk(sc))) { sc.type = undefined; sc.url = ''; }
+    const resumedScenes = scenes.filter((s) => s.type && s.type !== 'none').length;
+    if (resumedScenes) log(`visuals: ${resumedScenes}/${scenes.length} scenes pehle se ready (resume)`);
+    let chain = Promise.resolve();
+    const persist = () => {
+      chain = chain.then(() => Reel.updateOne({ _id: id }, { $set: { 'work.scenes': scenes, progress: 38 + Math.round((24 * scenes.filter((s) => s.type).length) / Math.max(1, scenes.length)) } })).catch(() => {});
+    };
+    await attachVisuals(scenes, script, style, id, usedIds, voice.shloks, { signal, persist });
+    await chain;
     log(`visuals: ${scenes.filter((s) => s.type !== 'none').length}/${scenes.length} scenes (${imageProvidersAvailable().join(',') || 'no AI provider'})`);
 
+    stopIf(signal);
     await set(reel, { progress: 62 });
     const seed = Math.floor(Math.random() * 100000);
     const music = await makeMusic(voice.durationSec, audioDir(id), [{ t: 0.1, kind: 'bowl' }, ...voice.shloks.map((s) => ({ t: s.from, kind: 'swell' }))], seed);
@@ -159,6 +202,12 @@ export async function prepareReel(id) {
     await set(reel, { status: 'render_wait', progress: 66, style, project, chapters: project.chapters, visualIds: scenes.map((s) => s.vid).filter(Boolean) });
     return true;
   } catch (e) {
+    if (e instanceof PausedError) {
+      if (e.timeout) { await set(reel, { status: 'failed', error: 'Timeout: video bahut der se atki thi' }); return false; }
+      await set(reel, { status: 'paused', pausedStage: reel.status, error: null });
+      log(`paused at ${reel.pausedStage}`);
+      return false;
+    }
     console.error(`[reel ${id}] PREP FAILED:`, e);
     await set(reel, { status: 'failed', error: String(e.message || e).slice(0, 500) });
     return false;
@@ -174,13 +223,14 @@ export async function cleanupAssets(reel) {
   await Reel.updateOne({ _id: reel._id }, { project: null });
 }
 
-/** STAGE 2: Remotion render (CPU heavy, runs one at a time). Also used after edits in the editor. */
-export async function renderStage(id) {
+/** STAGE 2: Remotion render (CPU heavy). Also used after edits in the editor. A paused render restarts from frame 0. */
+export async function renderStage(id, { signal } = {}) {
   const reel = await Reel.findById(id);
   if (!reel?.project) return false;
   const log = (m) => console.log(`[${reel.format} ${String(id).slice(-6)}] ${m}`);
   try {
-    await set(reel, { status: 'rendering', progress: 68, error: null });
+    stopIf(signal);
+    await set(reel, { status: 'rendering', progress: 68, error: null, pausedStage: null });
     await fs.mkdir(path.join(config.paths.storage, 'videos'), { recursive: true });
     const videoFile = `${id}.mp4`;
     let lastSaved = 0;
@@ -188,13 +238,19 @@ export async function renderStage(id) {
     await renderReel(reel.project, path.join(config.paths.storage, 'videos', videoFile), (p) => {
       const pct = 68 + Math.round(p * 30);
       if (pct - lastSaved >= 3) { lastSaved = pct; Reel.updateOne({ _id: id }, { progress: pct }).catch(() => {}); }
-    });
+    }, signal);
     const scheduledFor = reel.scheduledFor || (await nextSlot());
-    await set(reel, { status: 'ready', progress: 100, videoFile, scheduledFor, durationSec: reel.project.durationSec, genAt: new Date(), purgedAt: null });
+    await set(reel, { status: 'ready', progress: 100, videoFile, scheduledFor, durationSec: reel.project.durationSec, genAt: new Date(), purgedAt: null, work: null });
     if (config.cleanup === 'render') { await cleanupAssets(reel); log('temp files deleted'); }
     log('ready');
     return true;
   } catch (e) {
+    if (signal?.aborted || e instanceof PausedError) {
+      if (isTimeout(signal)) { await set(reel, { status: 'failed', error: 'Timeout: render bahut der se atka tha' }); return false; }
+      await set(reel, { status: 'paused', pausedStage: 'render_wait', progress: 66, error: null });
+      log('paused (render dobara shuru se chalega, baaki sab saved hai)');
+      return false;
+    }
     console.error(`[reel ${id}] RENDER FAILED:`, e);
     await set(reel, { status: 'failed', error: String(e.message || e).slice(0, 500) });
     return false;

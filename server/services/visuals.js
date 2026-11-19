@@ -1,3 +1,4 @@
+import { withKeys } from './keypool.js';
 import fs from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
 import path from 'node:path';
@@ -12,9 +13,11 @@ const exists = (f) => fs.access(f).then(() => true, () => false);
 const visualsDir = () => path.join(config.paths.storage, 'visuals');
 
 async function pexels(p) {
-  const r = await fetch(API + p, { headers: { Authorization: config.pexels.key } });
-  if (!r.ok) throw new Error(`Pexels ${r.status}`);
-  return r.json();
+  return withKeys('pexels', 'stock:pexels', async (key) => {
+    const r = await fetch(API + p, { headers: { Authorization: key } });
+    if (!r.ok) throw Object.assign(new Error(`Pexels ${r.status}`), { status: r.status });
+    return r.json();
+  });
 }
 
 async function download(url, dest) {
@@ -79,10 +82,11 @@ async function findPixabay(query, { minDur = 3, usedIds = new Set() } = {}) {
     const key = `x:${query}`;
     let hits = cache.get(key);
     if (!hits) {
-      const url = `https://pixabay.com/api/videos/?key=${config.pixabay.key}&q=${encodeURIComponent(query.slice(0, 100))}&video_type=film&safesearch=true&per_page=30`;
-      const r = await fetch(url);
-      if (!r.ok) throw new Error(`Pixabay ${r.status}`);
-      hits = (await r.json()).hits || [];
+      hits = (await withKeys('pixabay', 'stock:pixabay', async (key) => {
+        const r = await fetch(`https://pixabay.com/api/videos/?key=${key}&q=${encodeURIComponent(query.slice(0, 100))}&video_type=film&safesearch=true&per_page=30`);
+        if (!r.ok) throw Object.assign(new Error(`Pixabay ${r.status}`), { status: r.status });
+        return r.json();
+      })).hits || [];
       cache.set(key, hits);
     }
     for (const h of shuffle(hits)) {

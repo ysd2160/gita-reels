@@ -4,7 +4,8 @@ import express from 'express';
 import cors from 'cors';
 import { config } from './config.js';
 import { Plan, Reel, Topic } from './models.js';
-import { enqueue, enqueueRender, queueLength } from './services/queue.js';
+import { enqueue, enqueueRender, pauseReel, queueLength, queueState, resumeReel } from './services/queue.js';
+import { keyStats } from './services/keypool.js';
 import { bulkCreate, createReel, refillTopics } from './services/batch.js';
 import { chatAssistant, generateLongScript, romanToSpeak, scriptFromText, toApiShape, validateScript } from './services/gemini.js';
 import { writeShortScript } from './services/scriptContext.js';
@@ -48,7 +49,7 @@ export function createApp() {
     res.json({
       voice: batchProviders(), voiceName: { gemini: config.tts.gemini.voice, sarvam: config.tts.sarvam.speaker, elevenlabs: config.tts.elevenlabs.voiceId, google: config.tts.google.voice }, chant: config.tts.chant, images: imageProvidersAvailable(),
       stock: [config.pexels.key && 'pexels', config.pixabay.key && 'pixabay'].filter(Boolean),
-      music: config.music.mode, cleanup: config.cleanup, automation: st.automation, autoPublish: st.autoPublish, integrations: await integrationStatus(),
+      music: config.music.mode, cleanup: config.cleanup, automation: st.automation, autoPublish: st.autoPublish, integrations: await integrationStatus(), keys: keyStats(),
     });
   }));
   app.get('/api/settings', wrap(async (_req, res) => res.json(await getSettings())));
@@ -74,7 +75,7 @@ export function createApp() {
   app.get('/api/reels', wrap(async (_req, res) => {
     const reels = await Reel.find().select('-project').sort({ createdAt: -1 }).limit(120).lean();
     const editable = new Set((await Reel.find({ project: { $ne: null } }).select('_id').lean()).map((r) => String(r._id)));
-    res.json({ queue: queueLength(), reels: reels.map((r) => ({ ...r, editable: editable.has(String(r._id)) })) });
+    res.json({ queue: queueLength(), ...queueState(), reels: reels.map((r) => ({ ...r, editable: editable.has(String(r._id)) })) });
   }));
   app.post('/api/reels', wrap(async (req, res) => {
     const topic = String(req.body.topic || '').trim();
@@ -86,13 +87,23 @@ export function createApp() {
     const script = validateScript(toApiShape(req.body.script));
     res.json(await createReel(String(req.body.topic || script.hookText).slice(0, 120), { script }));
   }));
+  // ---- one video at a time: stop a video (keeps what it made) and continue it later from the same step
+  app.get('/api/queue', wrap(async (_req, res) => res.json(queueState())));
+  app.post('/api/reels/:id/pause', wrap(async (req, res) => {
+    const r = await pauseReel(req.params.id);
+    res.json(r ? { ok: true, state: r } : { error: 'ye video abhi chal nahi rahi / line mein nahi hai' });
+  }));
+  app.post('/api/reels/:id/resume', wrap(async (req, res) => {
+    const r = await resumeReel(req.params.id, { now: req.query.now === '1' });
+    res.json(r ? { ok: true, ...r } : { error: 'resume nahi ho sakti (video paused nahi hai)' });
+  }));
   app.post('/api/reels/:id/approve', wrap(async (req, res) => res.json(await approveReel(req.params.id))));
   app.post('/api/reels/:id/reject', wrap(async (req, res) => res.json(await Reel.findByIdAndUpdate(req.params.id, { status: 'rejected' }, { new: true }))));
   app.post('/api/reels/:id/publish', wrap(async (req, res) => res.json(await publishReel(req.params.id, { now: true }))));
   app.post('/api/reels/:id/regenerate', wrap(async (req, res) => {
     const reel = await Reel.findById(req.params.id);
     if (!reel) return res.status(404).json({ error: 'not found' });
-    const patch = { status: 'queued', progress: 0, error: null, videoFile: null, style: null, visualIds: [], project: null };
+    const patch = { status: 'queued', progress: 0, error: null, videoFile: null, style: null, visualIds: [], project: null, work: null, pausedStage: null };
     if (req.query.mode !== 'render') patch.script = null;
     await Reel.updateOne({ _id: reel._id }, patch);
     enqueue(reel._id);
@@ -103,7 +114,7 @@ export function createApp() {
     if (!reel) return res.status(404).json({ error: 'not found' });
     const draft = req.body.script;
     const script = reel.format === 'long' ? { ...reel.script, ...draft } : validateScript(toApiShape(draft));
-    await Reel.updateOne({ _id: reel._id }, { script, status: 'queued', progress: 0, error: null, videoFile: null, visualIds: [], project: null });
+    await Reel.updateOne({ _id: reel._id }, { script, status: 'queued', progress: 0, error: null, videoFile: null, visualIds: [], project: null, work: null, pausedStage: null });
     enqueue(reel._id);
     res.json({ ok: true, script });
   }));
@@ -183,9 +194,9 @@ export function createApp() {
   app.get('/api/plan', wrap(async (_req, res) => {
     await ensurePlan();
     const items = await Plan.find({ date: { $gte: todayIST() } }).sort({ date: 1, slot: 1 });
-    const reels = await Reel.find({ _id: { $in: items.map((i) => i.reelId).filter(Boolean) } }).select('status progress videoFile publish scheduledFor purgedAt error');
+    const reels = await Reel.find({ _id: { $in: items.map((i) => i.reelId).filter(Boolean) } }).select('status progress pausedStage videoFile publish scheduledFor purgedAt error');
     const byId = Object.fromEntries(reels.map((r) => [String(r._id), r]));
-    res.json({ today: todayIST(), items: items.map((i) => ({ ...i.toObject(), scriptBusy: isScriptBusy(i._id), reel: byId[String(i.reelId)] || null })) });
+    res.json({ today: todayIST(), queue: queueState(), items: items.map((i) => ({ ...i.toObject(), scriptBusy: isScriptBusy(i._id), reel: byId[String(i.reelId)] || null })) });
   }));
   app.put('/api/plan/:id', wrap(async (req, res) => {
     const patch = {};

@@ -4,7 +4,7 @@ export const DEFAULTS = {
   automation: false, // true = the daily plan is generated automatically at generateAt
   generateAt: '06:00', // IST - daily generation starts here
   shorts: 3,
-  long: 0, // target: 3 shorts a day (set 1 here to also make a 5-minute video)
+  long: 1, // 1 long video (up to ~5 min, YouTube only) a day
   shortSlots: ['07:30', '13:00', '20:30'], // IST publish times for the shorts
   longSlot: '18:00',
   planDays: 7,

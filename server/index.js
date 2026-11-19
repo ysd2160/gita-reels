@@ -11,6 +11,13 @@ import { getSettings } from './services/settings.js';
 import { setVoiceOverrides } from './services/tts.js';
 import { createApp } from './app.js';
 
+// a crashing child process (Chrome / ffmpeg pipe: "write EOF") must not take the whole dashboard down
+process.on('unhandledRejection', (e) => console.error('[unhandledRejection]', e));
+process.on('uncaughtException', (e) => {
+  console.error('[uncaughtException]', e);
+  if (!['EOF', 'EPIPE', 'ECONNRESET', 'ERR_STREAM_DESTROYED'].includes(e?.code)) process.exit(1);
+});
+
 async function main() {
   await mongoose.connect(config.mongoUri);
   console.log('MongoDB connected');
