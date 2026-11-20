@@ -5,13 +5,20 @@
 import { config } from '../config.js';
 import { FACT_BANK, formatById, lengthPlan, pickFormat, randomTargetSec } from '../formats.js';
 import { candidateVerses, verseById } from '../verses.js';
-import { asContents, callGemini, validateScript } from './gemini.js';
+import { asContents, callGemini, validateScript, ensureVoiceText, LANGUAGE_RULES } from './gemini.js';
 
 export const BANNED = [
   'aaj ke fast-paced', 'in today', 'yaad rakhiye', 'dosto', 'namaste', 'ultimately', 'at the end of the day', 'life ek journey', 'zindagi ek safar',
   'sabse pehle', 'toh chaliye', 'chaliye shuru', 'is video mein', 'aaj hum baat karenge', 'hum sab jaante hain', 'kya aap jaante hain', 'dhyan se suniye',
   'har insaan ke jeevan mein', 'jeevan mein safal', 'positive socho', 'universe',
 ];
+
+export const BANNED_HI = [
+  'दोस्तों', 'नमस्ते', 'याद रखिए', 'आज के फास्ट', 'तो चलिए', 'चलिए शुरू', 'इस वीडियो में', 'आज हम बात करेंगे', 'क्या आप जानते हैं', 'ध्यान से सुनिए',
+  'सबसे पहले', 'हम सब जानते हैं', 'हर इंसान के जीवन में', 'जीवन में सफल', 'ज़िंदगी एक सफ़र', 'ज़िंदगी एक सफर', 'जिंदगी एक सफर', 'पॉज़िटिव सोचो', 'पॉजिटिव सोचो',
+];
+// heavy Sanskrit-style words the narrator must not use (the voice and the viewer both get lost)
+export const HEAVY_HI = ['चिंतन', 'व्याकुल', 'मनःस्थिति', 'अत्यंत', 'प्रयत्न', 'इत्यादि', 'परंतु', 'किंतु', 'अतः', 'निरंतर', 'आत्मविश्वास', 'दूरभाष', 'पुनः', 'रात्रि'];
 
 const IMAGE_MOOD = {
   modern_story: 'cinematic scenes of modern Indian life told as a story: night city, rain on a window, a phone glowing in the dark, a desk lamp, an empty road, train platform; people only as silhouettes from behind or hands; keep the same main colours across the story',
@@ -22,7 +29,8 @@ const IMAGE_MOOD = {
 };
 
 const wordsOf = (s) => String(s || '').replace(/\*/g, '').split(/\s+/).filter(Boolean);
-const norm = (s) => String(s || '').toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
+const txt = (l) => l.speak || l.show || '';
+const norm = (s) => String(s || '').toLowerCase().replace(/[^\p{L}\p{M}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
 const jaccard = (a, b) => {
   const A = new Set(norm(a).split(' ').filter((w) => w.length > 2)), B = new Set(norm(b).split(' ').filter((w) => w.length > 2));
   if (!A.size || !B.size) return 0;
@@ -30,7 +38,7 @@ const jaccard = (a, b) => {
   return i / (A.size + B.size - i);
 };
 
-export const spokenWords = (script) => script.lines.reduce((n, l) => n + wordsOf(l.show).length, 0);
+export const spokenWords = (script) => script.lines.reduce((n, l) => n + wordsOf(txt(l)).length, 0);
 /** rough length of the finished video in seconds */
 export const estimateSec = (script) => Math.round(spokenWords(script) / 2.4 + 2 + (script.verseId ? 12.5 : 0));
 
@@ -44,18 +52,22 @@ export function lintScript(script, spec) {
   if (script.lines.length < plan.minLines || script.lines.length > plan.maxLines) errors.push(`Use ${plan.minLines}-${plan.maxLines} lines (now ${script.lines.length})`);
   const hookWords = wordsOf(script.hookText).length;
   if (hookWords > 9) errors.push(`hook_text has ${hookWords} words, max 8`);
-  const longLine = script.lines.findIndex((l) => wordsOf(l.show).length > 14);
+  const longLine = script.lines.findIndex((l) => wordsOf(txt(l)).length > 14);
   if (longLine >= 0) errors.push(`Line ${longLine + 1} is longer than 14 words; split it`);
-  const text = norm(script.lines.map((l) => l.show).join(' ') + ' ' + script.hookText);
-  const hit = BANNED.filter((b) => text.includes(norm(b)));
+  const text = norm(script.lines.map(txt).join(' ') + ' ' + script.hookText);
+  const hit = [...BANNED, ...BANNED_HI].filter((b) => text.includes(norm(b)));
   if (hit.length) errors.push(`Banned generic phrases used: ${hit.join(', ')}`);
+  const heavy = HEAVY_HI.filter((w) => text.includes(norm(w)));
+  if (heavy.length) errors.push(`Heavy / shuddh Hindi words used: ${heavy.join(', ')}. Use simple everyday spoken words instead`);
+  const romanLines = script.lines.filter((l) => l.speak && !/[\u0900-\u097F]/.test(l.speak)).length;
+  if (romanLines > script.lines.length * 0.3) errors.push('The "speak" lines must be written in Devanagari (Hindi words) + Latin (English words), not in Roman Hindi');
   const seen = new Set();
-  for (const l of script.lines) { const k = norm(l.show); if (seen.has(k)) { errors.push('Two lines are identical'); break; } seen.add(k); }
-  const first = script.lines[0]?.show || '';
+  for (const l of script.lines) { const k = norm(txt(l)); if (seen.has(k)) { errors.push('Two lines are identical'); break; } seen.add(k); }
+  const first = txt(script.lines[0] || {});
   const sim = Math.max(0, ...recentHooks.map((h) => Math.max(jaccard(h, script.hookText), jaccard(h, first))));
   if (sim >= 0.5) errors.push('Hook is too similar to a recent video; make it a completely different angle');
   if (/\b(shlok|sloka|shloka|sanskrit|verse|adhyay)\b|\bbg[- ]?\d|श्लोक/i.test(text)) errors.push('Do not mention shlok / verse / Sanskrit / adhyay anywhere: tell a story instead');
-  if (!/[?!]|\.{3}/.test(script.lines.at(-1)?.show || '')) errors.push('Last line should leave a question / open loop');
+  if (!/[?!…]|\.{3}/.test(txt(script.lines.at(-1) || {}))) errors.push('Last line should leave a question / open loop');
   return errors;
 }
 
@@ -69,28 +81,28 @@ STORYTELLING RULES (every video is ONE STORY, not a lecture; the previous videos
 5. TURN + RE-HOOK around the middle (\"Par tabhi...\" / \"Phir ek cheez badli...\"). Every line adds something NEW (a fact, an image, an emotion); never repeat an idea in other words.
 6. THE LESSON IS SHOWN BY WHAT HAPPENS and said only ONCE, in one short line near the end (the line people will screenshot). No sermon, no \"hume seekhna chahiye\", no list of advice. Krishna / the Gita may appear only INSIDE the story (a memory, someone's advice, Krishna as a character) in plain Hinglish.
 7. NO SHLOK, NO SANSKRIT, NO VERSE NUMBERS, NO CHANTING anywhere. Do not write the words shlok / verse / adhyay.
-8. VOICE: one friend talking to ONE person at night. Use \"tum\". Simple Hinglish a 22-year-old Indian speaks. Short punchy lines (4-12 words, average 8), fragments are fine. No preaching, no \"dosto\".
+8. VOICE: one friend talking to ONE person at night. Use \"तुम\". Simple everyday Hindi a 22-year-old Indian speaks (see LANGUAGE below), never textbook Hindi. Short punchy lines (4-12 words, average 8), fragments are fine. No preaching, no \"dosto\".
 9. LOOPABLE ENDING: the last line closes the story AND leaves a question or open loop that makes people comment or rewatch. Do NOT say \"follow karo\" in spoken lines (the on-screen \"cta\" field does that).
 10. FAITH & HONESTY: stay faithful to the teaching given below. Never invent a quote, a number or a historical \"fact\". Use only well-known Mahabharat / Gita episodes. No medical, therapy or guarantee claims. Respectful tone about Krishna and the Gita.
-11. BANNED phrases: ${BANNED.join(' | ')}.
+11. BANNED phrases: ${BANNED.join(' | ')} | ${BANNED_HI.join(' | ')}.
 12. ANTI-CLICHE: never use the template \"Tum X nahi ho, tum bas Y ho\" or \"Ye X nahi, Y hai\" more than once per script, never end with a generic \"Kya tum bhi...?\". Say something only THIS story could say.
-13. GOLD STANDARD for energy (match the specificity, rhythm and story flow, never copy the words):
-   hook: \"Usne 11 baar resume bheja.\"
-   \"Usne 11 baar resume bheja. Ek bhi jawab nahi.\"
-   \"Aman, 24 saal. Kamre mein laptop aur thandi chai.\"
-   \"Papa ka call aaya. Usne uthaya *nahi*.\"
-   \"Raat ke 1 baje, bas screen ko ghoor raha tha.\"
-   \"Tabhi dost ka message aaya: Result tere haath mein nahi, koshish hai.\"
-   \"Par tabhi ek baat *chubh* gayi.\"
-   \"Usne 12th resume bheja. Is baar 3 galtiyan theek karke.\"
-   \"Jawab phir bhi nahi aaya. Par ab wo *dar* nahi raha.\"
-   \"Koshish hamesha tumhare haath mein thi. Result kabhi nahi.\"
-   \"14th din ek mail aayi. Subject line mein bas ek shabd...\"
+13. GOLD STANDARD for energy (match the specificity, rhythm and story flow, never copy the words; this is also how the "speak" text must look):
+   hook_text (Roman): \"Usne 11 baar resume bheja.\"
+   \"उसने 11 बार resume भेजा। एक भी जवाब नहीं।\"
+   \"अमन, 24 साल। कमरे में laptop और ठंडी चाय।\"
+   \"पापा का call आया। उसने उठाया *नहीं*।\"
+   \"रात के 1 बजे, बस screen को घूर रहा था।\"
+   \"तभी दोस्त का message आया: Result तुम्हारे हाथ में नहीं, कोशिश है।\"
+   \"पर तभी एक बात *चुभ* गई।\"
+   \"उसने 12वाँ resume भेजा। इस बार 3 गलतियाँ ठीक करके।\"
+   \"जवाब फिर भी नहीं आया। पर अब वो *डर* नहीं रहा था।\"
+   \"कोशिश हमेशा तुम्हारे हाथ में थी। Result कभी नहीं।\"
+   \"14वें दिन एक mail आई। Subject line में बस एक शब्द...\"
    Notice: a named person, real numbers, tiny actions, a turn, a short lesson line, an open ending.`;
 
 const FIELDS = `
 FIELDS
-- "show": the line in natural Hinglish (Hindi words in Roman letters, English words as they are). It is BOTH the on-screen caption AND what the narrator says, so write it to be spoken: consistent simple spelling (nahi, hai, kyun, tum, mat), commas / full stops / "..." where a human pauses. Wrap exactly 1 key emotional word per line in *asterisks*, e.g. "Tum *overthink* nahi kar rahe".
+- "speak": the line exactly as the narrator says it, in Devanagari (Hindi words) + Latin (English words), see LANGUAGE above. Write it to be spoken: commas / \"।\" / \"...\" where a human pauses. Wrap exactly 1 key emotional word per line in *asterisks*, e.g. \"तुम *overthink* नहीं कर रहे\". Do NOT write a Roman version: the Roman caption is generated automatically.
 - "image": English prompt for an AI image generator for that line: concrete scene + lighting + mood, 15-30 words. NO close-up faces (silhouettes from behind, hands, symbolic objects, landscapes). Consecutive lines must look DIFFERENT. No text or letters in the image.
 - "visual": 2-4 word stock-footage search fallback.`;
 
@@ -115,6 +127,7 @@ ${recentHooks.length ? recentHooks.slice(0, 12).map((h) => `- ${h}`).join('\n') 
 
 ${grounding}
 ${CRAFT}
+${LANGUAGE_RULES}
 ${FIELDS}
 - Image mood for this format: ${IMAGE_MOOD[fmt.id] || IMAGE_MOOD.classic}
 
@@ -124,7 +137,7 @@ Return JSON ONLY:
   "verse_id": ${fmt.shlok ? '"bg-2-47"' : 'null'},
   "grounding_id": ${fmt.shlok ? 'null' : '"bg-2-47"'},
   "hook_text": "max 7 words, Roman Hinglish, big on-screen title in the first 2 seconds",
-  "lines": [ { "show": "...", "image": "...", "visual": "..." } ],
+  "lines": [ { "speak": "...", "image": "...", "visual": "..." } ],
   "shlok_line_index": ${fmt.shlok ? '4' : 'null'},
   "cta": "max 6 words on-screen end text, different style each time (comment prompt / save / follow for part 2)",
   "caption": "1-2 line post caption ending with a question",
@@ -145,7 +158,7 @@ CHECKLIST
 4. Rhythm: mix 3-word lines with 9-word lines. There must be a mini re-hook near the middle and exactly one screenshot-worthy line.
 5. The last line must make people comment or rewatch (question / loop back to the hook).
 6. Faithfulness: ${fmt.shlok ? 'keep one verse_id from the candidates below and make sure the line before the chant leads into it naturally; meaning must stay faithful.' : 'stay faithful to the grounding teaching; no invented facts or quotes. verse_id stays null.'}
-7. Every "image" prompt matches its line's emotion, no close-up faces, consecutive images differ. Keep "*word*" emphasis (1 per line).
+7. Every "image" prompt matches its line's emotion, no close-up faces, consecutive images differ. Keep "*word*" emphasis (1 per line). Keep the field name "speak" and keep it in Devanagari + English-in-Latin (never Roman Hindi); keep it plain everyday spoken Hindi, replace any heavy / bookish word with the simple one.
 8. STORY CHECK: is it still ONE story with a named character, scenes, a turn near the middle and a result? If any part turned into advice or a lecture, rewrite it as a scene. No word like shlok / verse / Sanskrit.
 9. Keep the same JSON schema and field names.
 ${issues.length ? `\nKNOWN PROBLEMS THAT MUST BE FIXED:\n${issues.map((i) => `- ${i}`).join('\n')}\n` : ''}
@@ -177,11 +190,13 @@ export async function generateScript(topic, ctx = {}) {
   const model = config.gemini.scriptModel;
 
   let draft, lastErr;
+  console.log(`[script] "${topic}" (${fmt.id}): draft...`);
   for (let i = 0; i < 3 && !draft; i++) {
     try { draft = normalize(await callGemini({ contents: asContents(draftPrompt(topic, spec, ctx.notes)), temperature: 0.95, model }), spec); } catch (e) { lastErr = e; }
   }
   if (!draft) throw new Error(`Script generation failed: ${lastErr?.message}`);
 
+  console.log('[script] draft ok, editor polish...');
   const candidates = [{ s: draft, errs: lintScript(draft, spec) }];
   for (let pass = 0; pass < 2; pass++) { // editor polish (always once), then one repair if problems remain
     const prev = candidates.at(-1);
@@ -195,10 +210,12 @@ export async function generateScript(topic, ctx = {}) {
   const best = candidates[0];
   if (best.errs.length) console.warn(`[script] "${topic}" (${fmt.id}) still has: ${best.errs.join(' | ')}`);
   const out = best.s;
+  console.log('[script] polish done, Roman caption...');
   if (fmt.shlok && !out.verseId) { // never ship a broken chant format: degrade to a no-chant story
     out.formatId = 'modern_story'; out.shlokLineIndex = null;
     console.warn(`[script] "${topic}": no verse picked, saved as a no-shlok script`);
   }
+  try { await ensureVoiceText(out); } catch (e) { console.warn(`[script] Roman caption conversion failed (will retry when the video is made): ${e.message}`); } // fills the Roman caption `show` from the Devanagari `speak`
   out.estimatedSec = estimateSec(out);
   return out;
 }

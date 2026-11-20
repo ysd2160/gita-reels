@@ -6,7 +6,7 @@
 export const WORDS_PER_SEC = 2.4;
 export const CHANT_SEC = 12.5; // chant + hold, average
 export const MIN_SEC = 30;
-export const MAX_SEC = 60;
+export const MAX_SEC = 120; // a short can be up to 2 minutes (Settings -> Reel ki length)
 
 export const FORMATS = [
   {

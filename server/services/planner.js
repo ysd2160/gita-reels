@@ -1,6 +1,6 @@
 import { Plan, Reel, Setting, Topic, SEED_LONG, SEED_TOPICS } from '../models.js';
 import { extractWeekPlan, generateLongScript, generatePlanTopics, generateWeekTopics, scriptFromText } from './gemini.js';
-import { formatById, pickFormat } from '../formats.js';
+import { FORMATS, formatById, pickFormat } from '../formats.js';
 import { recentContext, structureOwnScript, writeShortScript } from './scriptContext.js';
 import { getSettings } from './settings.js';
 import { enqueue } from './queue.js';
@@ -32,7 +32,7 @@ export async function ensurePlan({ brief = '' } = {}) {
     // remove surplus items that were planned earlier (e.g. an old 'long' slot) so the day never exceeds the cap
     for (const [kind, limit] of [['short', nShort], ['long', nLong]]) {
       const mine = have.filter((p) => p.kind === kind && p.status !== 'skipped');
-      for (const p of mine.slice(limit).reverse()) if (p.status === 'planned') { await Plan.deleteOne({ _id: p._id }); have = have.filter((h) => String(h._id) !== String(p._id)); }
+      for (const p of mine.slice(limit).reverse()) if (p.status === 'planned' && !p.sourceText && !p.script) { await Plan.deleteOne({ _id: p._id }); have = have.filter((h) => String(h._id) !== String(p._id)); }
     }
     const shorts = have.filter((p) => p.kind === 'short').length;
     const longs = have.filter((p) => p.kind === 'long').length;
@@ -72,6 +72,13 @@ export async function newTopicFor(item) {
 /** Start generation for one plan item. */
 export async function runPlanItem(item) {
   if (!item || item.status !== 'planned') return null;
+  // already made (or being made) for this plan item: never make it twice
+  const made = await Reel.findOne({ planId: item._id, status: { $ne: 'failed' } }).select('status');
+  if (made) {
+    await Plan.updateOne({ _id: item._id }, { status: ['ready', 'approved', 'published', 'rejected'].includes(made.status) ? 'done' : 'generating', reelId: made._id });
+    console.log(`[plan] "${item.topic}" pehle se bani hui hai (${made.status}), skip`);
+    return null;
+  }
   if ((await Plan.countDocuments({ date: item.date, status: { $in: ['generating', 'done'] } })) >= DAY_CAP) return null; // max videos per day reached
   const when = toDate(item.date, item.publishTime || '12:00');
   // posted at the planned time; if that time has already passed it goes out as soon as the video is ready
@@ -88,7 +95,7 @@ export async function writeScriptForItem(item) {
   let script;
   if (item.kind === 'long') {
     const recent = (await Reel.find({ format: 'long' }).sort({ createdAt: -1 }).limit(15).select('script')).map((r) => r.script?.hookText || r.script?.title).filter(Boolean);
-    script = item.sourceText ? await scriptFromText(item.sourceText, item.topic, 'long') : await generateLongScript(item.topic, recent, item.notes);
+    script = item.sourceText ? await scriptFromText(item.sourceText, item.topic, 'long') : await generateLongScript(item.topic, recent, item.notes, (await getSettings()).longMinutes);
   } else if (item.sourceText) script = await structureOwnScript({ text: item.sourceText, topic: item.topic }); // creator's own script from the plan: kept word for word
   else script = await writeShortScript({ topic: item.topic, formatId: item.formatId, targetSec: item.targetSec, notes: item.notes, excludePlanId: item._id });
   return script;
@@ -136,6 +143,11 @@ const WEEKDAYS = { monday: 1, somvar: 1, mon: 1, tuesday: 2, mangalvar: 2, tue: 
  */
 export async function importWeekPlan({ text = '', file = null, startDate = todayIST(), brief = '' }) {
   const items = await extractWeekPlan({ text, file, brief });
+  return applyPlanItems(items, startDate);
+}
+
+/** items = [{ day, date, kind, topic, formatId, notes, scriptText }] -> Plan rows (+ background structuring of the pasted scripts) */
+async function applyPlanItems(items, startDate = todayIST()) {
   if (!items.length) return { created: 0, skipped: 0, items: [], note: 'Plan mein koi reel nahi mili. Text/PDF check karo.' };
   const st = await getSettings();
   const maxDay = Math.max(...items.map((i) => i.day || 1), 1);
@@ -173,6 +185,88 @@ export async function importWeekPlan({ text = '', file = null, startDate = today
   }
   const queued = await prewriteScripts([...byDate.keys()]);
   return { created: created.length, skipped, days: maxDay, scriptsQueued: queued, items: created.map((c) => ({ date: c.date, topic: c.topic, formatId: c.formatId, ownScript: !!c.sourceText, kind: c.kind })) };
+}
+
+// ---------------------------------------------------------------- own scripts, plain text (no AI reads it: your words stay exactly as written)
+const fmtFromText = (t) => {
+  const k = String(t || '').trim().toLowerCase();
+  if (!k) return null;
+  const hit = FORMATS.find((f) => f.id === k || f.label.toLowerCase() === k || f.label.toLowerCase().includes(k) || k.includes(f.label.toLowerCase()));
+  if (hit) return hit.id;
+  if (/mahabharat|karn|epic/.test(k)) return 'epic_story';
+  if (/arjun|krishna|dialog|sawaal|baat/.test(k)) return 'dialogue';
+  if (/twist|ant|palat/.test(k)) return 'twist_story';
+  if (/raaz|mystery|fact/.test(k)) return 'mystery';
+  if (/aaj|modern|kahani|story/.test(k)) return 'modern_story';
+  return null;
+};
+const DAY_RE = /^\s*(?:#+\s*)?(?:din|day|दिन)\s*[-:.]?\s*(\d{1,2})\s*(?:[:\-–(].*)?$/i;
+const DATE_RE = /^\s*(?:#+\s*)?(?:din|day|date|तारीख)?\s*[-:]?\s*(\d{4}-\d{2}-\d{2})\s*$/i;
+const ITEM_RE = /^\s*(?:#+\s*)?(reel|short|long)\s*\d*\s*:\s*(.*)$/i;
+const SCRIPT_RE = /^\s*script\s*:\s*(.*)$/i;
+const RULE_RE = /^\s*(?:[-=_*~]{3,})\s*$/;
+
+/**
+ * Plain-text plan with the creator's own scripts:
+ *   Din 1                      (or a date 2026-11-24)
+ *   Reel: topic | kahani ka type (optional) | note: ... (optional)
+ *   SCRIPT:
+ *   one line per sentence...
+ *   LONG: topic               (5-minute video, YouTube only)
+ * Returns { items, warnings }.
+ */
+export function parseOwnScripts(text) {
+  const rows = String(text || '').replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').split('\n');
+  const items = [], warnings = [];
+  let day = 1, date = null, cur = null, sawDay = false;
+  const close = () => {
+    if (!cur) return;
+    const body = cur.lines.join('\n').trim();
+    const tag = cur.date || `Din ${cur.day}`;
+    cur.scriptText = body.length >= 40 ? body : null;
+    if (!cur.scriptText && body) warnings.push(`${tag}, "${cur.topic}": script bahut chhoti hai (40 akshar se kam), isliye AI is topic par khud script likhega`);
+    const words = body.replace(/\*/g, '').split(/\s+/).filter(Boolean).length;
+    if (cur.scriptText && cur.kind === 'short' && (words < 45 || words > 320)) warnings.push(`${tag}, "${cur.topic}": ${words} words hain (~2.4 words = 1 sec; 140 words ~ 60 sec, 280 words ~ 120 sec)`);
+    if (cur.scriptText && cur.kind === 'long' && words < 300) warnings.push(`${tag}, LONG "${cur.topic}": sirf ${words} words, video chhoti banegi (~2.4 words = 1 sec; 5 min ke liye ~700 words, 10 min ke liye ~1400)`);
+    delete cur.lines;
+    items.push(cur); cur = null;
+  };
+  for (const raw of rows) {
+    const line = raw.trim();
+    const d = DATE_RE.exec(line), n = DAY_RE.exec(line);
+    if (n || d) {
+      close(); sawDay = true;
+      if (d) { date = d[1]; day = null; } else { day = Number(n[1]); date = null; }
+      continue;
+    }
+    const m = ITEM_RE.exec(line);
+    if (m) {
+      close();
+      const parts = m[2].split('|').map((x) => x.trim());
+      const note = parts.slice(1).find((x) => /^note\s*:/i.test(x));
+      const type = parts.slice(1).find((x) => !/^note\s*:/i.test(x));
+      cur = { day, date, kind: m[1].toLowerCase() === 'long' ? 'long' : 'short', topic: (parts[0] || '').slice(0, 140), formatId: fmtFromText(type), notes: note ? note.replace(/^note\s*:/i, '').trim().slice(0, 600) : '', lines: [] };
+      continue;
+    }
+    if (!cur) { if (line && !RULE_RE.test(line)) warnings.push(`Ye line kisi "Reel:" ke bina thi, chhod di: "${line.slice(0, 50)}"`); continue; }
+    if (!line || RULE_RE.test(line) || /^\(.*\)$/.test(line)) continue; // blank, separator, or a (placeholder note in brackets)
+    const sc = SCRIPT_RE.exec(line);
+    if (sc) { if (sc[1].trim()) cur.lines.push(sc[1].trim()); continue; }
+    cur.lines.push(line);
+  }
+  close();
+  for (const it of items) if (!it.topic) it.topic = (it.scriptText || 'Script').split('\n')[0].replace(/\*/g, '').slice(0, 60);
+  return { items: items.filter((i) => i.day || i.date), warnings, sawDay };
+}
+
+/** The creator's own scripts for 1 day up to a month: { text, startDate } */
+export async function importOwnScripts({ text = '', startDate = todayIST() }) {
+  const { items, warnings } = parseOwnScripts(text);
+  if (!items.length) return { created: 0, skipped: 0, items: [], warnings, note: 'Koi "Reel:" ya "LONG:" line nahi mili. Template jaisa format use karo.' };
+  const tooFar = items.filter((i) => i.day && i.day > 31).length;
+  if (tooFar) warnings.push(`${tooFar} item "Din 31" se aage the, wo din 31 par rakhe gaye`);
+  const r = await applyPlanItems(items, startDate);
+  return { ...r, warnings };
 }
 
 export async function runDay(date) {

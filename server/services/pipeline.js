@@ -2,6 +2,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { config } from '../config.js';
 import { Reel } from '../models.js';
+import { MAX_SEC } from '../formats.js';
+import { getSettings } from './settings.js';
 import { verseById } from '../verses.js';
 import { ensureVoiceText, generateLongScript } from './gemini.js';
 import { writeShortScript } from './scriptContext.js';
@@ -131,7 +133,7 @@ export async function prepareReel(id, { signal } = {}) {
       const recent = (await Reel.find({ script: { $ne: null }, format }).sort({ createdAt: -1 }).limit(15).select('script'))
         .map((r) => r.script?.hookText || r.script?.title).filter(Boolean);
       log(format === 'long' ? 'long script (outline + parts)...' : 'script (2-pass)...');
-      await set(reel, { script: format === 'long' ? await generateLongScript(reel.topic, recent) : await writeShortScript({ topic: reel.topic, formatId: reel.formatId, targetSec: reel.targetSec, notes: reel.notes }), progress: 12 });
+      await set(reel, { script: format === 'long' ? await generateLongScript(reel.topic, recent, '', (await getSettings()).longMinutes) : await writeShortScript({ topic: reel.topic, formatId: reel.formatId, targetSec: reel.targetSec, notes: reel.notes }), progress: 12 });
     }
     stopIf(signal);
     const script = { ...reel.script, format };
@@ -151,7 +153,7 @@ export async function prepareReel(id, { signal } = {}) {
       await Reel.updateOne({ _id: id }, { $set: { 'work.voice': voice } });
       log(`voice ok via ${voice.provider}${voice.chanted ? ' + chants' : ''}, ${voice.durationSec}s (${script.formatId || 'classic'}${script.verseId ? '' : ', no shlok'})`);
     }
-    if (format === 'short' && (voice.durationSec > 61 || voice.durationSec < 25)) log(`WARNING: ${voice.durationSec}s is outside the 30-60 s target. Edit the script (shorter/longer) and press New look.`);
+    if (format === 'short' && (voice.durationSec > MAX_SEC + 3 || voice.durationSec < 25)) log(`WARNING: ${voice.durationSec}s is outside the 30-${MAX_SEC} s range. Edit the script (shorter/longer) and press New look.`);
 
     // ---- visuals (every finished scene is saved)
     stopIf(signal);

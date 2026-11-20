@@ -15,7 +15,7 @@ import { batchProviders, setVoiceOverrides, speakBatch, lastTtsError } from './s
 import { toWav } from './services/audio.js';
 import { ART_STYLES, buildPrompt, generateImage, imageProvidersAvailable } from './services/images.js';
 import { getSettings, saveSettings } from './services/settings.js';
-import { ensurePlan, importWeekPlan, isScriptBusy, newTopicFor, planWeekWithAI, prewriteScripts, runDay, runPlanItem, todayIST } from './services/planner.js';
+import { ensurePlan, importOwnScripts, importWeekPlan, isScriptBusy, newTopicFor, planWeekWithAI, prewriteScripts, runDay, runPlanItem, todayIST } from './services/planner.js';
 import { approveReel } from './services/reelActions.js';
 import { integrationStatus, platformStatus, publishReel } from './services/publisher.js';
 import { youtubeAuthUrl, youtubeConfigured, youtubeExchange } from './uploaders/youtube.js';
@@ -232,7 +232,7 @@ export function createApp() {
     let script;
     if (item.kind === 'long') {
       const recent = (await Reel.find({ format: 'long' }).sort({ createdAt: -1 }).limit(15).select('script')).map((r) => r.script?.hookText || r.script?.title).filter(Boolean);
-      script = await generateLongScript(item.topic, recent);
+      script = await generateLongScript(item.topic, recent, '', (await getSettings()).longMinutes);
     } else script = await writeShortScript({ topic: item.topic, formatId, targetSec, notes: item.notes, excludePlanId: item._id });
     res.json(await Plan.findByIdAndUpdate(item._id, { script, ...(script.formatId ? { formatId: script.formatId } : {}) }, { new: true }));
   }));
@@ -276,7 +276,11 @@ export function createApp() {
     const item = await Plan.findById(req.params.id);
     res.json(await Plan.findByIdAndUpdate(item._id, { topic: await newTopicFor(item) }, { new: true }));
   }));
-  app.post('/api/plan/:id/run', wrap(async (req, res) => res.json({ started: !!(await runPlanItem(await Plan.findById(req.params.id))) })));
+  app.post('/api/plan/:id/run', wrap(async (req, res) => {
+    const item = await Plan.findById(req.params.id);
+    const reel = item ? await runPlanItem(item) : null;
+    res.json({ started: !!reel, ...(reel ? {} : { note: 'Ye video pehle se bani hui / ban rahi hai, ya aaj ki limit poori ho chuki hai' }) });
+  }));
   app.post('/api/plan/run-today', wrap(async (_req, res) => res.json({ started: await runDay(todayIST()) })));
   app.post('/api/plan/reset', wrap(async (_req, res) => {
     await Plan.deleteMany({ date: { $gte: todayIST() }, status: 'planned' });
@@ -284,6 +288,14 @@ export function createApp() {
   }));
   // AI plans the whole week (mixed formats) and writes all the scripts in the background. Optional brief = "is hafte karma aur anger par".
   app.post('/api/plan/week/ai', wrap(async (req, res) => res.json(await planWeekWithAI({ brief: String(req.body?.brief || '').slice(0, 1500) }))));
+  // The creator's own scripts, plain text, 1 day up to a month: { text, startDate? }  (nothing is rewritten by AI; see parseOwnScripts for the format)
+  app.post('/api/plan/scripts/import', wrap(async (req, res) => {
+    const text = String(req.body?.text || '');
+    if (!text.trim()) return res.status(400).json({ error: 'Scripts ka text paste karo' });
+    if (text.length > 600000) return res.status(400).json({ error: 'Text bahut bada hai (max ~6 lakh akshar). Do hisson mein daalo.' });
+    const start = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body?.startDate || '')) ? req.body.startDate : todayIST();
+    res.json(await importOwnScripts({ text, startDate: start }));
+  }));
   // Weekly plan from a PDF / image / text: { text?, file?: { name, mime, data(base64) }, startDate?, brief? }
   app.post('/api/plan/week/import', wrap(async (req, res) => {
     const { text = '', file = null, startDate, brief = '' } = req.body || {};

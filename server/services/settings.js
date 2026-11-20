@@ -7,8 +7,9 @@ export const DEFAULTS = {
   long: 1, // 1 long video (up to ~5 min, YouTube only) a day
   shortSlots: ['07:30', '13:00', '20:30'], // IST publish times for the shorts
   longSlot: '18:00',
+  longMinutes: 5, // length of the long video: 5 | 7 | 10 minutes (= number of chapters)
   planDays: 7,
-  reelLength: 'auto', // auto | 30 | 45 | 60 (seconds) - target length of every short
+  reelLength: 'auto', // auto | 30 | 45 | 60 | 90 | 120 (seconds) - target length of every short
   shlokPercent: 0, // shlok is switched off: every video is a story
   prewriteScripts: true, // write today's scripts in advance so the Home page shows them
   keepHours: 24, // all files (images, audio, video) of a reel are deleted this many hours after generation

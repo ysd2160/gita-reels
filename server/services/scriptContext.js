@@ -1,7 +1,7 @@
 // What was made recently (hooks, shlokas, formats), so every new script is different from it.
 import { Plan, Reel } from '../models.js';
 import { getSettings } from './settings.js';
-import { formatById, pickFormat, randomTargetSec } from '../formats.js';
+import { MAX_SEC, formatById, pickFormat, randomTargetSec } from '../formats.js';
 import { generateScript } from './scriptwriter.js';
 import { scriptFromText } from './gemini.js';
 
@@ -20,9 +20,9 @@ export async function recentContext({ excludePlanId = null, kind = 'short' } = {
 
 /** target length (seconds) from Settings: 'auto' = random 34-56 s */
 export async function resolveTargetSec(wanted) {
-  if (Number(wanted) >= 30) return Math.min(60, Number(wanted));
+  if (Number(wanted) >= 30) return Math.min(MAX_SEC, Number(wanted));
   const st = await getSettings();
-  return Number(st.reelLength) >= 30 ? Math.min(60, Number(st.reelLength)) : randomTargetSec();
+  return Number(st.reelLength) >= 30 ? Math.min(MAX_SEC, Number(st.reelLength)) : randomTargetSec();
 }
 
 /** One call that writes a short script for a topic with all the context (format, length, no repeats) */
