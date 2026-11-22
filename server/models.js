@@ -28,8 +28,10 @@ const reelSchema = new Schema(
     work: Schema.Types.Mixed, // saved steps of an unfinished video { voice, style, scenes } -> resume continues from here
     retries: { type: Number, default: 0 }, // automatic re-tries after a failed generation
     formatId: String, // reel format (classic / story / mystery ...), see server/formats.js
-    targetSec: Number, // wanted length 30-60 s
+    targetSec: Number, // wanted length (seconds)
     notes: String, // creator's notes for the script
+    pillar: String, // content pillar (overthinking | career | relationships) - to compare which topics work
+    hookStyle: String, // how the first line hooks (mid_scene | number | contradiction | you_call | question)
   },
   { timestamps: true },
 );
@@ -53,6 +55,7 @@ const planSchema = new Schema(
     formatId: String, // reel format id (server/formats.js); empty = chosen automatically
     targetSec: Number, // wanted length in seconds (30-60); empty = automatic
     notes: String, // creator's notes / angle for this video (from the week plan)
+    pillar: String, // content pillar chosen for this video
     sourceText: String, // full script text found in an imported plan (kept word for word)
   },
   { timestamps: true },

@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import {
-  AbsoluteFill, Audio, Img, OffthreadVideo, Sequence, interpolate, random, spring, useCurrentFrame, useVideoConfig,
+  AbsoluteFill, Audio, Easing, Img, OffthreadVideo, Sequence, interpolate, random, spring, useCurrentFrame, useVideoConfig,
 } from 'remotion';
 import { Background } from './Background';
 import { devanagari, poppins } from './fonts';
@@ -19,7 +19,11 @@ export type StyleProps = {
   shlokStyle: 'card' | 'minimal' | 'band';
   hookStyle: 'big' | 'band';
   transition: 'fade' | 'zoom' | 'slide' | 'flash';
+  /** video format (shorts only): classic = big hook, captions, CTA | headline = title stays on top | kinetic = one huge word at a time | frame = picture in a rounded window | cinema = letterbox + subtitles */
+  variant?: Variant;
 };
+export type Variant = 'classic' | 'headline' | 'kinetic' | 'frame' | 'cinema';
+export const VARIANTS_LIST: Variant[] = ['classic', 'headline', 'kinetic', 'frame', 'cinema'];
 /** y values are the CENTRE of the element as a fraction of the canvas height (0..1) */
 export type Layout = {
   hookY: number; capY: number; shlokY: number; ctaY: number;
@@ -53,6 +57,15 @@ export const DEFAULT_LAYOUT: Record<'short' | 'long', Layout> = {
   long: { hookY: 0.45, capY: 0.82, shlokY: 0.4, ctaY: 0.5, hookSize: 1, capSize: 1, showHook: true, showCaptions: true, showShlok: true, showCta: true, showProgress: true, showGrain: true, showDust: true, voiceVolume: 1 },
 };
 
+/** per-format placement (shorts). Applied on top of DEFAULT_LAYOUT.short when a video is made or the format is changed in the editor. */
+export const VARIANT_LAYOUT: Record<Variant, Partial<Layout>> = {
+  classic: {},
+  headline: { hookY: 0.17, hookSize: 0.6, capY: 0.62, ctaY: 0.86 },
+  kinetic: { hookY: 0.2, capY: 0.55, capSize: 1.5, ctaY: 0.84 },
+  frame: { hookY: 0.115, hookSize: 0.6, capY: 0.79, capSize: 0.9, shlokY: 0.44, ctaY: 0.91 },
+  cinema: { hookY: 0.08, hookSize: 0.5, capY: 0.915, capSize: 0.62, shlokY: 0.45, ctaY: 0.78, showProgress: false },
+};
+
 const OVERLAP = 7; // frames of cross-transition between scenes
 
 const useDims = () => {
@@ -64,25 +77,42 @@ const useDims = () => {
 const withPalette = (base: Palette, accent: string, text: string): Palette => ({ ...base, accent: accent || base.accent, text: text || base.text });
 
 // ------------------------------------------------------------------ scenes (moving visuals)
-const SceneLayer: React.FC<{ scene: Scene; transition: StyleProps['transition']; isFirst: boolean; total: number }> = ({ scene, transition, isFirst, total }) => {
+const SceneLayer: React.FC<{ scene: Scene; transition: StyleProps['transition']; isFirst: boolean; total: number; idx: number }> = ({ scene, transition, isFirst, total, idx }) => {
   const frame = useCurrentFrame();
-  const { fps } = useDims();
+  const { fps, isLong } = useDims();
   const t = Math.min(1, frame / Math.max(1, total));
+  const e = Easing.inOut(Easing.cubic)(t); // camera eases in and out, like a real move
   const p = isFirst ? 1 : interpolate(frame, [0, OVERLAP], [0, 1], { extrapolateRight: 'clamp' });
   const ease = 1 - Math.pow(1 - p, 3);
+  const isImg = scene.type === 'image';
 
-  const kb = scene.type === 'image' ? 0.17 : 0.08;
+  // A still image gets a real "camera": a base zoom that hides every edge, a strong push / pull, a pan, a tiny handheld wobble, a punch on the cut and light breathing.
+  const base = isImg ? (isLong ? 1.06 : 1.1) : 1.04;
+  const kb = isImg ? (isLong ? 0.1 : 0.17) : 0.07;
+  const pan = isImg ? (isLong ? 20 : 34) : 18;
   const dir = scene.motion;
-  let scale = dir === 'out' ? 1 + kb * (1 - t) : 1 + kb * t;
+  let scale = base + (dir === 'out' ? kb * (1 - e) : kb * e);
   let tx = 0;
   let ty = 0;
-  if (dir === 'left') tx = -40 * t + 20;
-  if (dir === 'right') tx = 40 * t - 20;
-  if (dir === 'up') ty = -50 * t + 25;
+  if (dir === 'left') tx = (1 - 2 * e) * pan;
+  if (dir === 'right') tx = (2 * e - 1) * pan;
+  if (dir === 'up') ty = (1 - 2 * e) * pan;
+  if (isImg) {
+    const ph = idx * 1.7;
+    tx += Math.sin(frame / 7 + ph) * 2.2;
+    ty += Math.cos(frame / 8.3 + ph) * 2.2;
+  }
+  const rot = isImg ? Math.sin(frame / 23 + idx) * 0.35 : 0;
+  const punch = isFirst ? 0 : interpolate(frame, [0, 8], [0.06, 0], { extrapolateRight: 'clamp', easing: Easing.out(Easing.cubic) });
+  scale += punch;
   if (transition === 'zoom') scale *= 1 + (1 - ease) * 0.22;
   if (transition === 'slide') tx += (1 - ease) * 110;
 
-  const style: React.CSSProperties = { width: '100%', height: '100%', objectFit: 'cover', transform: `translate(${tx}px, ${ty}px) scale(${scale})` };
+  const style: React.CSSProperties = {
+    width: '100%', height: '100%', objectFit: 'cover',
+    transform: `translate(${tx}px, ${ty}px) rotate(${rot}deg) scale(${scale})`,
+    ...(isImg ? { filter: `brightness(${(1 + 0.035 * Math.sin(frame / 11 + idx)).toFixed(3)})` } : {}),
+  };
   const flash = transition === 'flash' && !isFirst ? interpolate(frame, [0, 4], [0.75, 0], { extrapolateRight: 'clamp' }) : 0;
 
   return (
@@ -107,7 +137,7 @@ const Scenes: React.FC<{ scenes: Scene[]; transition: StyleProps['transition'] }
         const len = Math.round((sc.end - sc.start) * fps) + (i === 0 ? 0 : OVERLAP) + 2;
         return (
           <Sequence key={i} from={from} durationInFrames={Math.max(2, len)}>
-            <SceneLayer scene={sc} transition={transition} isFirst={i === 0} total={len} />
+            <SceneLayer scene={sc} transition={transition} isFirst={i === 0} total={len} idx={i} />
           </Sequence>
         );
       })}
@@ -180,11 +210,11 @@ const At: React.FC<{ y: number; children: React.ReactNode; pad?: number }> = ({ 
 };
 
 // ------------------------------------------------------------------ captions
-const Captions: React.FC<{ lines: Line[]; palette: Palette; mode: StyleProps['captionStyle']; y: number; size: number; shloks: Shlok[] }> = ({ lines, palette, mode, y, size, shloks }) => {
+const Captions: React.FC<{ lines: Line[]; palette: Palette; mode: StyleProps['captionStyle']; y: number; size: number; shloks: Shlok[]; perWords?: number; noShift?: boolean }> = ({ lines, palette, mode, y, size, shloks, perWords, noShift }) => {
   const frame = useCurrentFrame();
   const { fps, isLong, u, fs } = useDims();
   const t = frame / fps;
-  const per = isLong ? 4 : 2;
+  const per = perWords ?? (isLong ? 4 : 2);
 
   const chunks = useMemo(() => {
     const out: { words: Word[]; start: number; end: number }[] = [];
@@ -202,7 +232,7 @@ const Captions: React.FC<{ lines: Line[]; palette: Palette; mode: StyleProps['ca
   if (!chunk) return null;
   const pop = spring({ frame: frame - Math.round(chunk.start * fps), fps, durationInFrames: 8, config: { damping: 11, stiffness: 240 } });
   const overShlok = shloks.some((s) => t >= s.from - 0.1 && t <= s.to + 0.1);
-  const yy = overShlok && !isLong ? Math.max(y, 0.72) : y;
+  const yy = overShlok && !isLong && !noShift ? Math.max(y, 0.72) : y;
   const base = 94 * u * fs * size;
 
   return (
@@ -225,12 +255,12 @@ const Captions: React.FC<{ lines: Line[]; palette: Palette; mode: StyleProps['ca
 };
 
 // ------------------------------------------------------------------ hook / shlok / cta / chapters
-const Hook: React.FC<{ text: string; palette: Palette; mode: StyleProps['hookStyle']; y: number; size: number }> = ({ text, palette, mode, y, size }) => {
+const Hook: React.FC<{ text: string; palette: Palette; mode: StyleProps['hookStyle']; y: number; size: number; sticky?: boolean }> = ({ text, palette, mode, y, size, sticky }) => {
   const frame = useCurrentFrame();
   const { fps, u, fs, isLong } = useDims();
-  const end = (isLong ? 4 : 2.4) * fps;
+  const end = sticky ? Number.POSITIVE_INFINITY : (isLong ? 4 : 2.8) * fps;
   if (frame > end) return null;
-  const opacity = interpolate(frame, [end - 8, end], [1, 0], { extrapolateLeft: 'clamp' });
+  const opacity = sticky ? 1 : interpolate(frame, [end - 8, end], [1, 0], { extrapolateLeft: 'clamp' });
   const words = text.split(/\s+/).filter(Boolean);
   const box: React.CSSProperties = mode === 'band'
     ? { background: palette.accent, color: '#120a00', padding: `${34 * u * fs}px ${40 * u * fs}px`, borderRadius: 28 * u, boxShadow: `0 0 70px ${palette.glow}` }
@@ -239,8 +269,9 @@ const Hook: React.FC<{ text: string; palette: Palette; mode: StyleProps['hookSty
     <At y={y} pad={isLong ? 200 : 60}>
       <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: `0 ${26 * u * fs}px`, fontFamily: poppins, fontWeight: 800, fontSize: 104 * u * fs * size, lineHeight: 1.12, textAlign: 'center', opacity, ...box }}>
         {words.map((w, i) => {
-          const p = spring({ frame: frame - i * 3, fps, durationInFrames: 12, config: { damping: 10, stiffness: 230 } });
-          return <span key={i} style={{ display: 'inline-block', transform: `translateY(${(1 - p) * 60}px) scale(${0.6 + 0.4 * p})`, opacity: Math.min(1, p * 2) }}>{w}</span>;
+          // the very first frame already shows the hook (no empty first second): word 1 is there at frame 0, the rest snap in within a few frames
+          const p = spring({ frame: frame - i * 2, fps, durationInFrames: 9, config: { damping: 12, stiffness: 260 } });
+          return <span key={i} style={{ display: 'inline-block', transform: `translateY(${(1 - p) * 28}px) scale(${0.86 + 0.14 * p})`, opacity: i === 0 ? 1 : Math.min(1, p * 3) }}>{w}</span>;
         })}
       </div>
     </At>
@@ -335,6 +366,7 @@ export const Reel: React.FC<ReelProps> = (props) => {
   const L: Layout = { ...DEFAULT_LAYOUT[props.format === 'long' ? 'long' : 'short'], ...(props.layout || {}) };
   const palette = withPalette(TEMPLATES[props.style.templateId] ?? TEMPLATES['gold-cosmic'], props.accent, props.textColor);
   const shloks = props.shloks || [];
+  const V: Variant = !isLong && props.style.variant && VARIANTS_LIST.includes(props.style.variant) ? props.style.variant : 'classic';
   const musicVolume = (f: number) => {
     const t = f / fps;
     let d = Infinity;
@@ -346,8 +378,26 @@ export const Reel: React.FC<ReelProps> = (props) => {
     <AbsoluteFill style={{ backgroundColor: '#000' }}>
       <Background palette={palette} seed={props.seed} />
       <AbsoluteFill style={{ filter: GRADE[props.style.templateId] ?? GRADE['gold-cosmic'] }}>
-        <Scenes scenes={props.scenes} transition={props.style.transition} />
+        {V === 'frame' ? (
+          <div style={{ position: 'absolute', left: '5.5%', right: '5.5%', top: '22%', height: '44%', borderRadius: 46, overflow: 'hidden', border: `4px solid ${palette.accent}`, boxShadow: `0 0 80px ${palette.glow}` }}>
+            <Scenes scenes={props.scenes} transition={props.style.transition} />
+          </div>
+        ) : V === 'cinema' ? (
+          <div style={{ position: 'absolute', left: 0, right: 0, top: '15%', height: '70%', overflow: 'hidden' }}>
+            <Scenes scenes={props.scenes} transition={props.style.transition} />
+          </div>
+        ) : (
+          <Scenes scenes={props.scenes} transition={props.style.transition} />
+        )}
       </AbsoluteFill>
+      {V === 'cinema' ? (
+        <>
+          <div style={{ position: 'absolute', left: 0, right: 0, top: 0, height: '15%', background: '#000' }} />
+          <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '15%', background: '#000' }} />
+          <div style={{ position: 'absolute', left: 0, right: 0, top: '15%', height: 3, background: palette.accent, opacity: 0.8 }} />
+          <div style={{ position: 'absolute', left: 0, right: 0, bottom: '15%', height: 3, background: palette.accent, opacity: 0.8 }} />
+        </>
+      ) : null}
       <Grade palette={palette} />
       {L.showDust ? <Dust palette={palette} seed={props.seed} /> : null}
       {L.showGrain ? <Grain seed={props.seed} /> : null}
@@ -358,13 +408,13 @@ export const Reel: React.FC<ReelProps> = (props) => {
       ))}
       {props.musicUrl && props.musicOn !== false ? <Audio src={props.musicUrl} volume={musicVolume} loop /> : null}
       {L.showProgress ? <Progress palette={palette} durationSec={props.durationSec} /> : null}
-      {props.channel ? (
+      {props.channel && V !== 'cinema' && V !== 'frame' ? (
         <div style={{ position: 'absolute', top: isLong ? 40 : 150, left: 0, right: 0, textAlign: 'center', fontFamily: poppins, fontWeight: 600, fontSize: 30 * (isLong ? 0.7 : 1), letterSpacing: 4, color: palette.text, opacity: 0.6, textTransform: 'uppercase' }}>{props.channel}</div>
       ) : null}
       {(props.chapters || []).map((c, i) => <ChapterCard key={i} chapter={c} index={i} palette={palette} />)}
-      {L.showHook ? <Hook text={props.hook} palette={palette} mode={props.style.hookStyle} y={L.hookY} size={L.hookSize} /> : null}
+      {L.showHook ? <Hook text={props.hook} palette={palette} mode={V === 'headline' ? 'band' : props.style.hookStyle} y={L.hookY} size={L.hookSize} sticky={V === 'headline' || V === 'frame' || V === 'cinema'} /> : null}
       {L.showShlok ? shloks.map((s, i) => <ShlokCard key={i} shlok={s} palette={palette} mode={props.style.shlokStyle} y={L.shlokY} />) : null}
-      {L.showCaptions ? <Captions lines={props.lines} palette={palette} mode={props.style.captionStyle} y={L.capY} size={L.capSize} shloks={shloks} /> : null}
+      {L.showCaptions ? <Captions lines={props.lines} palette={palette} mode={props.style.captionStyle} y={L.capY} size={L.capSize} shloks={shloks} perWords={V === 'kinetic' ? 1 : V === 'cinema' ? 4 : undefined} noShift={V === 'frame' || V === 'cinema'} /> : null}
       {L.showCta ? <Cta text={props.cta} palette={palette} durationSec={props.durationSec} y={L.ctaY} /> : null}
     </AbsoluteFill>
   );

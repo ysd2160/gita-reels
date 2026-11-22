@@ -1,8 +1,10 @@
+import mongoose from 'mongoose';
 import { Plan, Reel, Setting, Topic, SEED_LONG, SEED_TOPICS } from '../models.js';
 import { extractWeekPlan, generateLongScript, generatePlanTopics, generateWeekTopics, scriptFromText } from './gemini.js';
-import { FORMATS, formatById, pickFormat } from '../formats.js';
+import { FORMATS, formatById, pickFormat, pickPillar } from '../formats.js';
 import { recentContext, structureOwnScript, writeShortScript } from './scriptContext.js';
 import { getSettings } from './settings.js';
+import { computeRetimes } from './retime.js';
 import { enqueue } from './queue.js';
 import { purgeExpired } from './retention.js';
 import { config } from '../config.js';
@@ -18,36 +20,98 @@ export const toDate = (date, time) => new Date(Date.parse(`${date}T${time}:00Z`)
 const DAY_CAP = Math.max(config.maxPerDay, 4);
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
+// ---- days whose plan the creator deleted: ensurePlan() must NOT fill them up again ----
+const CLEARED = 'plan:clearedDays';
+export async function clearedDays() {
+  const v = (await Setting.findOne({ key: CLEARED }))?.value;
+  return Array.isArray(v) ? v.filter((d) => d >= todayIST()) : [];
+}
+const setCleared = (list) => Setting.updateOne({ key: CLEARED }, { key: CLEARED, value: [...new Set(list)].sort() }, { upsert: true });
+
+// ---- single plan items the creator deleted: remembered per day + kind so ensurePlan() does not create a replacement ----
+const REMOVED = 'plan:removedItems';
+async function removedItems() {
+  const v = (await Setting.findOne({ key: REMOVED }))?.value;
+  return Array.isArray(v) ? v.filter((r) => r?.date >= todayIST()) : [];
+}
+const setRemoved = (list) => Setting.updateOne({ key: REMOVED }, { key: REMOVED, value: list }, { upsert: true });
+export async function resetCleared() { await setCleared([]); await setRemoved([]); }
+
+/** Delete ONE planned / skipped item. A video that is generating or already made is never touched. */
+export async function deleteItem(id) {
+  if (!mongoose.isValidObjectId(id)) return { deleted: 0, note: 'Plan item nahi mila' };
+  const it = await Plan.findById(id);
+  if (!it) return { deleted: 0, note: 'Plan item nahi mila (pehle hi delete ho chuka hoga)' };
+  if (!['planned', 'skipped'].includes(it.status) || it.reelId) return { deleted: 0, note: 'Ye video ban rahi / ban chuki hai, plan se delete nahi hogi. Videos tab se delete karo.' };
+  await Plan.deleteOne({ _id: it._id });
+  await setRemoved([...(await removedItems()), { date: it.date, kind: it.kind }]);
+  return { deleted: 1 };
+}
+
+/** Delete the plan of one day. Only items that were not started yet (planned / skipped) go; videos already generating or made stay. */
+export async function deleteDayPlan(date) {
+  const r = await Plan.deleteMany({ date, status: { $in: ['planned', 'skipped'] }, reelId: null });
+  await setCleared([...(await clearedDays()), date]);
+  return { deleted: r.deletedCount || 0, kept: await Plan.countDocuments({ date }) };
+}
+/** Bring a deleted day back: it is planned again by the AI, exactly like a new day. */
+export async function restoreDayPlan(date) {
+  await setCleared((await clearedDays()).filter((d) => d !== date));
+  await setRemoved((await removedItems()).filter((r) => r.date !== date));
+  return ensurePlan();
+}
+
+/** Settings -> publish times changed: move every upcoming plan item and every not-yet-uploaded video to the new times. */
+export async function retimeUpcoming() {
+  const st = await getSettings();
+  const items = await Plan.find({ date: { $gte: todayIST() }, status: { $in: ['planned', 'generating', 'done'] } });
+  const reels = await Reel.find({ planId: { $in: items.map((i) => i._id) }, status: { $ne: 'failed' } }).select('planId status scheduledFor publish');
+  const { plans, reels: rs, locked } = computeRetimes(items, new Map(reels.map((r) => [String(r.planId), r])), st, { toDate });
+  for (const p of plans) await Plan.updateOne({ _id: p.id }, { publishTime: p.time });
+  for (const r of rs) await Reel.updateOne({ _id: r.id }, { scheduledFor: r.scheduledFor });
+  return { plans: plans.length, reels: rs.length, locked };
+}
+
 /** Make sure every day of the next N days has its planned items (topics chosen by AI in advance). */
 export async function ensurePlan({ brief = '' } = {}) {
   const st = await getSettings();
   const start = todayIST();
   const want = [];
+  const cleared = new Set(await clearedDays());
+  const removed = await removedItems();
   // hard cap: never more than DAY_CAP videos a day, whatever is saved in Settings
   const nShort = Math.min(Number(st.shorts) || 0, DAY_CAP);
   const nLong = Math.min(Number(st.long) || 0, DAY_CAP - nShort);
   for (let d = 0; d < st.planDays; d++) {
     const date = addDays(start, d);
+    if (cleared.has(date)) continue; // creator deleted this day's plan
     let have = await Plan.find({ date }).sort({ slot: 1 });
     // remove surplus items that were planned earlier (e.g. an old 'long' slot) so the day never exceeds the cap
-    for (const [kind, limit] of [['short', nShort], ['long', nLong]]) {
+    // items the creator deleted one by one are not created again
+    const tShort = Math.max(0, nShort - removed.filter((r) => r.date === date && r.kind === 'short').length);
+    const tLong = Math.max(0, nLong - removed.filter((r) => r.date === date && r.kind === 'long').length);
+    for (const [kind, limit] of [['short', tShort], ['long', tLong]]) {
       const mine = have.filter((p) => p.kind === kind && p.status !== 'skipped');
       for (const p of mine.slice(limit).reverse()) if (p.status === 'planned' && !p.sourceText && !p.script) { await Plan.deleteOne({ _id: p._id }); have = have.filter((h) => String(h._id) !== String(p._id)); }
     }
     const shorts = have.filter((p) => p.kind === 'short').length;
     const longs = have.filter((p) => p.kind === 'long').length;
-    for (let i = shorts; i < nShort; i++) want.push({ date, kind: 'short', slot: i, publishTime: st.shortSlots[i] || st.shortSlots.at(-1) || '12:00' });
-    for (let i = longs; i < nLong; i++) want.push({ date, kind: 'long', slot: 10 + i, publishTime: st.longSlot });
+    for (let i = shorts; i < tShort; i++) want.push({ date, kind: 'short', slot: i, publishTime: st.shortSlots[i] || st.shortSlots.at(-1) || '12:00' });
+    for (let i = longs; i < tLong; i++) want.push({ date, kind: 'long', slot: 10 + i, publishTime: st.longSlot });
   }
   if (!want.length) return 0;
   const used = [...(await Plan.find().select('topic')).map((p) => p.topic), ...(await Reel.find().sort({ createdAt: -1 }).limit(60).select('topic')).map((r) => r.topic)];
   // every short gets a FORMAT (modern story / Mahabharat story / twist / dialogue ...): never the same one twice in a day, recent ones are avoided
-  const recentFormats = (await recentContext()).recentFormats;
+  const ctx0 = await recentContext();
+  const recentFormats = ctx0.recentFormats;
+  const recentPillars = [...ctx0.recentPillars];
   const shorts = want.filter((w) => w.kind === 'short');
   for (const w of shorts) {
     const sameDay = [...(await Plan.find({ date: w.date, kind: 'short' }).select('formatId')).map((p) => p.formatId), ...shorts.filter((x) => x.date === w.date && x.formatId).map((x) => x.formatId)].filter(Boolean);
     w.formatId = pickFormat({ recent: [...recentFormats], sameDay });
     recentFormats.unshift(w.formatId);
+    w.pillar = pickPillar(recentPillars); // the channel talks about 3 pillars only; the least recently used one is next
+    recentPillars.unshift(w.pillar);
   }
   let topics = { shorts: [], long: [] };
   try {
@@ -65,6 +129,11 @@ export async function ensurePlan({ brief = '' } = {}) {
 
 export async function newTopicFor(item) {
   const used = (await Plan.find().select('topic')).map((p) => p.topic);
+  if (item.kind === 'short') {
+    const pillar = item.pillar || pickPillar((await recentContext()).recentPillars);
+    const t = await generateWeekTopics({ slots: [{ formatId: item.formatId || 'modern_story', pillar }], avoid: used });
+    if (t[0]) { await Plan.updateOne({ _id: item._id }, { pillar }); return t[0]; }
+  }
   const t = await generatePlanTopics({ shorts: item.kind === 'short' ? 1 : 0, long: item.kind === 'long' ? 1 : 0, avoid: used });
   return (item.kind === 'long' ? t.long[0] : t.shorts[0]) || item.topic;
 }
@@ -82,7 +151,7 @@ export async function runPlanItem(item) {
   if ((await Plan.countDocuments({ date: item.date, status: { $in: ['generating', 'done'] } })) >= DAY_CAP) return null; // max videos per day reached
   const when = toDate(item.date, item.publishTime || '12:00');
   // posted at the planned time; if that time has already passed it goes out as soon as the video is ready
-  const reel = await Reel.create({ topic: item.topic, format: item.kind, planId: item._id, formatId: item.formatId, targetSec: item.targetSec, notes: item.notes, ...(item.script ? { script: item.script } : {}), scheduledFor: when.getTime() > Date.now() ? when : new Date() });
+  const reel = await Reel.create({ topic: item.topic, format: item.kind, planId: item._id, formatId: item.formatId, targetSec: item.targetSec, notes: item.notes, pillar: item.pillar || item.script?.pillar || '', hookStyle: item.script?.hookStyle || '', ...(item.script ? { script: item.script } : {}), scheduledFor: when.getTime() > Date.now() ? when : new Date() });
   await Plan.updateOne({ _id: item._id }, { status: 'generating', reelId: reel._id });
   enqueue(reel._id);
   return reel;
@@ -97,12 +166,12 @@ export async function writeScriptForItem(item) {
     const recent = (await Reel.find({ format: 'long' }).sort({ createdAt: -1 }).limit(15).select('script')).map((r) => r.script?.hookText || r.script?.title).filter(Boolean);
     script = item.sourceText ? await scriptFromText(item.sourceText, item.topic, 'long') : await generateLongScript(item.topic, recent, item.notes, (await getSettings()).longMinutes);
   } else if (item.sourceText) script = await structureOwnScript({ text: item.sourceText, topic: item.topic }); // creator's own script from the plan: kept word for word
-  else script = await writeShortScript({ topic: item.topic, formatId: item.formatId, targetSec: item.targetSec, notes: item.notes, excludePlanId: item._id });
+  else script = await writeShortScript({ topic: item.topic, formatId: item.formatId, targetSec: item.targetSec, notes: item.notes, excludePlanId: item._id, pillar: item.pillar });
   return script;
 }
 async function generateAndSave(item) {
   const script = await writeScriptForItem(item);
-  return Plan.findOneAndUpdate({ _id: item._id, status: 'planned', script: null }, { script, ...(script.formatId ? { formatId: script.formatId } : {}) }, { new: true }); // never overwrites a script you wrote
+  return Plan.findOneAndUpdate({ _id: item._id, status: 'planned', script: null }, { script, ...(script.formatId ? { formatId: script.formatId } : {}), ...(script.pillar && !item.pillar ? { pillar: script.pillar } : {}) }, { new: true }); // never overwrites a script you wrote
 }
 /** fire-and-forget: writes the missing scripts of one day (or several days), one after another. Returns how many are queued. */
 export async function prewriteScripts(dates = todayIST()) {
@@ -129,6 +198,7 @@ export async function prepareToday() {
 /** Weekly plan: AI creates a fresh week (mixed formats), optionally following the creator's brief. */
 export async function planWeekWithAI({ brief = '', days = 7 } = {}) {
   await Plan.deleteMany({ date: { $gte: todayIST() }, status: 'planned', script: null });
+  await resetCleared(); // asking the AI for a fresh week also brings deleted days back
   const created = await ensurePlan({ brief });
   const dates = Array.from({ length: days }, (_, d) => addDays(todayIST(), d));
   const queued = await prewriteScripts(dates);
@@ -161,6 +231,8 @@ async function applyPlanItems(items, startDate = todayIST()) {
   }
   const created = [];
   for (const [date, list] of [...byDate].sort(([a], [b]) => a.localeCompare(b))) {
+    await setCleared((await clearedDays()).filter((d) => d !== date)); // an imported plan for this day replaces the deletion
+    await setRemoved((await removedItems()).filter((r) => r.date !== date));
     if (list.some((x) => x.kind !== 'long')) await Plan.deleteMany({ date, kind: 'short', status: 'planned', reelId: null }); // replace what was only planned
     if (list.some((x) => x.kind === 'long')) await Plan.deleteMany({ date, kind: 'long', status: 'planned', reelId: null });
     const kept = await Plan.find({ date }).sort({ slot: 1 }); // already generating / done / skipped stay

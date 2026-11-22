@@ -1,3 +1,4 @@
+import { storyboard } from './storyboard.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { config } from '../config.js';
@@ -13,12 +14,14 @@ import { findLocal, findStock } from './visuals.js';
 import { makeMusic } from './music.js';
 import { renderReel } from './render.js';
 import { nextSlot } from './scheduler.js';
-import { DEFAULT_LAYOUT } from './shape.js';
+import { DEFAULT_LAYOUT, VARIANTS as FORMAT_VARIANTS, VARIANT_LAYOUT } from './shape.js';
 import { PausedError, isTimeout, stopIf } from './control.js';
 
 const exists = (f) => fs.access(f).then(() => true, () => false);
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const OVERLAP = 0.24;
+const MIN_SCENE = 2.2; // shorts: no picture stays shorter than ~2 s ...
+const MAX_SCENE = 4.0; // ... or longer than 4 s
 const gen = (id) => path.join(config.paths.storage, 'gen', String(id));
 const audioDir = (id) => path.join(config.paths.storage, 'audio', String(id));
 const VARIANTS = ['different angle, closer detail', 'wide establishing shot', 'macro detail, shallow depth of field', 'seen from above'];
@@ -30,9 +33,10 @@ const SACRED = [
   'ancient temple bells and carved stone pillars in warm light',
 ];
 
-export function pickStyle(prev) {
+export function pickStyle(prev, format = 'short') {
   const art = pick(ART_STYLES.filter((a) => a.id !== prev?.artStyle));
   return {
+    variant: format === 'short' ? pick(FORMAT_VARIANTS.filter((v) => v !== prev?.variant)) : 'classic', // video format: a different layout each time
     artStyle: art.id,
     templateId: art.template,
     captionStyle: pick(['pop', 'box', 'glow'].filter((t) => t !== prev?.captionStyle)),
@@ -47,7 +51,7 @@ async function set(reel, patch) {
   await reel.save();
 }
 
-/** Scenes follow the narration. Shorts: one per line. Long: lines grouped to ~5.5-8 s. Long scenes are split. */
+/** Scenes follow the narration. Shorts: one picture per line (short lines are joined), 2-4 s each. Long: lines grouped to ~5.5-8 s. Long scenes are split. */
 export function planScenes(lines, durationSec, format = 'short') {
   const groups = [];
   if (format === 'long') {
@@ -61,14 +65,23 @@ export function planScenes(lines, durationSec, format = 'short') {
     });
     if (g) groups.push({ ...g, end: durationSec });
   } else {
-    lines.forEach((l, i) => groups.push({ start: i === 0 ? 0 : l.start, end: i < lines.length - 1 ? lines[i + 1].start : durationSec, first: i, last: i }));
+    // shorts: a new picture every 2-4 seconds, following the script. A very short line joins the next one, a long line is split.
+    let g = null;
+    lines.forEach((l, i) => {
+      const start = i === 0 ? 0 : l.start;
+      if (!g) g = { start, first: i, last: i };
+      g.last = i;
+      const end = i < lines.length - 1 ? lines[i + 1].start : durationSec;
+      if (end - g.start >= MIN_SCENE) { groups.push({ ...g, end }); g = null; }
+    });
+    if (g) { if (groups.length) groups[groups.length - 1].end = durationSec; else groups.push({ ...g, end: durationSec }); }
   }
-  const maxLen = format === 'long' ? 8 : 4.6;
+  const maxLen = format === 'long' ? 8 : MAX_SCENE;
   const scenes = [];
   for (const g of groups) {
     const parts = Math.max(1, Math.ceil((g.end - g.start) / maxLen));
     const step = (g.end - g.start) / parts;
-    for (let k = 0; k < parts; k++) scenes.push({ start: +(g.start + k * step).toFixed(3), end: +(g.start + (k + 1) * step).toFixed(3), line: g.first, part: k });
+    for (let k = 0; k < parts; k++) scenes.push({ start: +(g.start + k * step).toFixed(3), end: +(g.start + (k + 1) * step).toFixed(3), line: g.first, last: g.last, part: k });
   }
   return scenes;
 }
@@ -88,7 +101,7 @@ async function attachVisuals(scenes, script, style, id, usedIds, shloks, { signa
     const sacred = shloks.some((s) => mid >= s.from && mid <= s.to);
     let v = null;
     if (hasAI) {
-      let scene = sacred ? pick(SACRED) : line.image;
+      let scene = sacred ? pick(SACRED) : (sc.prompt || line.image);
       if (sc.part) scene += `, ${VARIANTS[(sc.part - 1) % VARIANTS.length]}`;
       const r = await generateImage(buildPrompt(art, scene), path.join(dir, `scene${i}`));
       if (r) v = { type: 'image', url: `${config.baseUrl}/media/gen/${id}/${path.basename(r.file)}` };
@@ -133,10 +146,12 @@ export async function prepareReel(id, { signal } = {}) {
       const recent = (await Reel.find({ script: { $ne: null }, format }).sort({ createdAt: -1 }).limit(15).select('script'))
         .map((r) => r.script?.hookText || r.script?.title).filter(Boolean);
       log(format === 'long' ? 'long script (outline + parts)...' : 'script (2-pass)...');
-      await set(reel, { script: format === 'long' ? await generateLongScript(reel.topic, recent, '', (await getSettings()).longMinutes) : await writeShortScript({ topic: reel.topic, formatId: reel.formatId, targetSec: reel.targetSec, notes: reel.notes }), progress: 12 });
+      await set(reel, { script: format === 'long' ? await generateLongScript(reel.topic, recent, '', (await getSettings()).longMinutes) : await writeShortScript({ topic: reel.topic, formatId: reel.formatId, targetSec: reel.targetSec, notes: reel.notes, pillar: reel.pillar }), progress: 12 });
     }
     stopIf(signal);
     const script = { ...reel.script, format };
+    // tag every video (pillar + hook style), so we can later see which kind of video works
+    if (format === 'short' && ((script.pillar && script.pillar !== reel.pillar) || (script.hookStyle && script.hookStyle !== reel.hookStyle))) await set(reel, { pillar: script.pillar || reel.pillar || '', hookStyle: script.hookStyle || reel.hookStyle || '' });
     // creators write Hinglish only; the narrator gets Hindi-in-Devanagari + English-in-Latin (much more natural for TTS)
     if (await ensureVoiceText(script)) await set(reel, { script, progress: 15 });
 
@@ -160,11 +175,12 @@ export async function prepareReel(id, { signal } = {}) {
     await set(reel, { status: 'visuals', progress: Math.max(reel.progress || 0, 38), durationSec: voice.durationSec });
     let style = work.style;
     if (!style) {
-      style = reel.style?.artStyle ? reel.style : pickStyle((await Reel.findOne({ _id: { $ne: id }, style: { $ne: null } }).sort({ createdAt: -1 }))?.style);
+      style = reel.style?.artStyle ? reel.style : pickStyle((await Reel.findOne({ _id: { $ne: id }, style: { $ne: null } }).sort({ createdAt: -1 }))?.style, format);
       await Reel.updateOne({ _id: id }, { $set: { 'work.style': style } });
     }
     const usedIds = new Set((await Reel.find({ _id: { $ne: id } }).sort({ createdAt: -1 }).limit(12).select('visualIds')).flatMap((r) => r.visualIds || []));
     const scenes = Array.isArray(work.scenes) && work.scenes.length ? work.scenes : planScenes(voice.lines, voice.durationSec, format);
+    if (!work.scenes?.length) { await storyboard(scenes, script, { log }); await Reel.updateOne({ _id: id }, { $set: { 'work.scenes': scenes } }); } // prompts saved: a resume does not ask again
     for (const sc of scenes) if (sc.type && sc.type !== 'none' && !(await sceneFileOk(sc))) { sc.type = undefined; sc.url = ''; }
     const resumedScenes = scenes.filter((s) => s.type && s.type !== 'none').length;
     if (resumedScenes) log(`visuals: ${resumedScenes}/${scenes.length} scenes pehle se ready (resume)`);
@@ -187,7 +203,7 @@ export async function prepareReel(id, { signal } = {}) {
       durationSec: voice.durationSec,
       style,
       accent: '', textColor: '',
-      layout: { ...DEFAULT_LAYOUT[format], ...(format === 'short' ? { capY: pick([0.54, 0.59, 0.62]) } : {}) },
+      layout: { ...DEFAULT_LAYOUT[format], ...(format === 'short' ? { capY: pick([0.54, 0.59, 0.62]) } : {}), ...(format === 'short' ? VARIANT_LAYOUT[style.variant] || {} : {}) },
       hook: script.hookText,
       lines: voice.lines,
       audio: voice.audio.map((a) => ({ url: audioUrl(a.file), start: a.start, duration: a.duration, rate: a.rate })),

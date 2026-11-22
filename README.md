@@ -83,3 +83,17 @@ SCRIPT: (optional) paste your own full script under a topic, it is used word for
 - **Voice** of a long script is made in parts of ~1300 characters (cut at chapter starts); every part is cached, so a retry / resume never pays for finished parts again.
 - **Render** of the 5-minute video uses ONE browser tab and 1280x720 by default (`RENDER_CONCURRENCY_LONG`, `LONG_RENDER_SCALE` in `.env`). If the PC still runs out of memory, the render is automatically retried with lighter settings (960x540, one thread, no parallel encoding). Reels keep 1080x1920 and also get a low-memory second try.
 - If Windows still says "memory allocation failed": close Chrome / other heavy apps, and set Windows virtual memory (pagefile) to "System managed size".
+
+## v15: built for retention (viral-first)
+- **Hook in the first frame**: the voice starts at once (no silent lead-in), the hook text is on screen from frame 0, and the video ends 0.8 s after the last line so it loops back into the first line.
+- **25-40 s shorts**: Auto length is now 28-40 s (Settings -> Reel ki length also has 25s / 35s). Lines are ~7.5 words, one picture per line.
+- **Script engine**: retention rules (8-word hook that starts inside the tensest moment, re-hook every ~3 lines, one picture per line, Gita idea only in the last 2-3 lines, loopable ending). The quality check rejects a long first line, a slow "ek din..." intro and lines over 12 words.
+- **3 pillars only**: overthinking, career, relationships (server/formats.js `PILLARS`). The week planner gives every slot the least recently used pillar and writes specific situations ("11 resume, zero reply"), sometimes a "Part 2".
+- **Tags on every video**: `pillar` and `hookStyle` (mid_scene / number / contradiction / you_call / question) are saved on the Plan item, the script and the Reel. Hook styles rotate automatically. Compare them in YouTube Studio.
+- **Visuals**: a new picture every 2-4 s following the script (short lines are joined, long ones split). Still images move like video: eased push/pull, pan, a small handheld wobble, a punch-in on every cut and light breathing.
+
+## v16 - caption sync, accurate visuals, new video formats
+- **Caption sync**: line cut points are now predicted from syllables (not letters); each caption starts at the real voice onset (-0.04 s) and the words inside a line are timed on the *voiced* part of the audio (pauses no longer eat word time). Change `CAP_LEAD` in `server/services/timeline.js` if captions still feel early/late (bigger = earlier).
+- **Accurate visuals**: new `server/services/storyboard.js` - one extra Gemini call per video reads the final script + real scene timing and writes one image prompt per scene (literal subject / metaphor of exactly what is being said, varied camera angles, no faces). Falls back to the old per-line prompt if Gemini fails. Prompts are saved with the scenes (resume does not ask again).
+- **New video formats** (shorts, random per video, never the same twice in a row): `classic` (big hook -> captions -> CTA), `headline` (hook stays pinned on top), `kinetic` (one huge word at a time), `frame` (picture inside a rounded window), `cinema` (black bars + subtitles). Change it per video in Editor -> Style -> "Video format". Placement lives in `VARIANT_LAYOUT` (`src/remotion/Reel.tsx` and `server/services/shape.js`, keep both in sync). Remove a name from `VARIANTS` in shape.js to stop using it.
+- After updating run `npm run build:editor` (the editor changed).

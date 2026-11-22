@@ -1,9 +1,9 @@
-// Script engine for 30-60 s reels.
+// Script engine for 25-40 s reels (built for retention: instant hook, re-hooks, a picture per line, a loopable ending).
 // - every video is a STORY (modern story / Mahabharat story / dialogue / twist / mystery); no shlok, no chant
 // - picks teaching candidates (grounding) that were NOT used recently
 // - writes draft -> editor polish -> automatic quality check (word count, banned phrases, weak hook, repeated hook)
 import { config } from '../config.js';
-import { FACT_BANK, formatById, lengthPlan, pickFormat, randomTargetSec } from '../formats.js';
+import { FACT_BANK, PILLARS, formatById, hookStyleById, lengthPlan, pickFormat, pickHookStyle, pillarById, randomTargetSec } from '../formats.js';
 import { candidateVerses, verseById } from '../verses.js';
 import { asContents, callGemini, validateScript, ensureVoiceText, LANGUAGE_RULES } from './gemini.js';
 
@@ -52,8 +52,11 @@ export function lintScript(script, spec) {
   if (script.lines.length < plan.minLines || script.lines.length > plan.maxLines) errors.push(`Use ${plan.minLines}-${plan.maxLines} lines (now ${script.lines.length})`);
   const hookWords = wordsOf(script.hookText).length;
   if (hookWords > 9) errors.push(`hook_text has ${hookWords} words, max 8`);
-  const longLine = script.lines.findIndex((l) => wordsOf(txt(l)).length > 14);
-  if (longLine >= 0) errors.push(`Line ${longLine + 1} is longer than 14 words; split it`);
+  const longLine = script.lines.findIndex((l) => wordsOf(txt(l)).length > 12);
+  if (longLine >= 0) errors.push(`Line ${longLine + 1} is longer than 12 words; split it (one picture per line)`);
+  const firstWords = wordsOf(txt(script.lines[0] || {})).length;
+  if (firstWords > 9) errors.push(`The FIRST line has ${firstWords} words; it is the hook and must be 8 words or fewer so it is spoken in under 2.5 seconds`);
+  if (/^\s*(ek (baar|din|ladka|ladki)|एक (बार|दिन|लड़का|लड़की)|kal raat|कल रात)/i.test(txt(script.lines[0] || {}))) errors.push('The first line starts like a slow story intro; start INSIDE the tensest moment instead');
   const text = norm(script.lines.map(txt).join(' ') + ' ' + script.hookText);
   const hit = [...BANNED, ...BANNED_HI].filter((b) => text.includes(norm(b)));
   if (hit.length) errors.push(`Banned generic phrases used: ${hit.join(', ')}`);
@@ -100,6 +103,17 @@ STORYTELLING RULES (every video is ONE STORY, not a lecture; the previous videos
    \"14वें दिन एक mail आई। Subject line में बस एक शब्द...\"
    Notice: a named person, real numbers, tiny actions, a turn, a short lesson line, an open ending.`;
 
+const VIRAL = `
+RETENTION RULES (most viewers swipe away in 1.5 seconds; the next second must always earn the one after it)
+V1. The FIRST spoken line is the hook: 8 words or fewer, spoken in under 2.5 seconds, and it starts INSIDE the tensest moment (a spoken line, a number, an object, a contradiction). No setup, no name introduction, no greeting, no \"ek baar ki baat hai\".
+V2. The first line must plant a question in the viewer's head (kaun? kyun? phir kya hua?). The answer must NOT arrive before about 60% of the video.
+V3. RE-HOOK every 7-9 seconds (about every 3rd line): a new detail, a small twist or a short \"Par...\" line, so nobody drifts away in the middle.
+V4. ONE PICTURE PER LINE: every line is easy to illustrate with a single image, max 12 words (average 7-8), never two ideas in one line. A new image appears every 2-4 seconds, so write lines that are 2-4 seconds when spoken.
+V5. Cut everything that does not move the story forward: no warm-up, no filler, no repeated idea. Shorter beats padded.
+V6. RELATABLE IN 5 SECONDS: the viewer should think \"ye to mera hi hai\": late-night phone, an ignored message, a friend's success, a parent's call, a rejected application, last seen. Specific beats general.
+V7. FEEL FIRST, WISDOM LAST: make them feel pain, hope or relief first. The Krishna / Gita idea arrives only in the LAST 2-3 lines, as ONE simple plain sentence, never as a lecture.
+V8. LOOP: the last line reconnects to the first line (echo its key word or image, or answer it so the opening line feels new when it replays) OR ends on a question the viewer wants to answer about THEIR OWN life in the comments (\"Tumne aakhri baar kab ...?\").`;
+
 const FIELDS = `
 FIELDS
 - "speak": the line exactly as the narrator says it, in Devanagari (Hindi words) + Latin (English words), see LANGUAGE above. Write it to be spoken: commas / \"।\" / \"...\" where a human pauses. Wrap exactly 1 key emotional word per line in *asterisks*, e.g. \"तुम *overthink* नहीं कर रहे\". Do NOT write a Roman version: the Roman caption is generated automatically.
@@ -117,16 +131,19 @@ function draftPrompt(topic, spec, notes) {
   return `You are the head writer of a Hindi/Hinglish faceless spiritual short-video channel "Bhagavad Gita For Modern Problems" (Instagram Reels / YouTube Shorts, audience: Indians aged 18-35).
 
 TOPIC: ${topic}
+${spec.pillar ? `CONTENT PILLAR: "${spec.pillar.label}" - ${spec.pillar.desc}. Keep the story inside this pillar.` : `CONTENT PILLAR: the channel only talks about these 3 pillars: ${PILLARS.map((p) => `${p.id} (${p.label})`).join(' | ')}. Pick the one that fits the topic and return its id in "pillar".`}
+HOOK STYLE FOR THIS VIDEO: ${spec.hookStyle.label}, for example "${spec.hookStyle.ex}" (inspiration only, write your own, specific to this topic).
 ${notes ? `CREATOR'S NOTES FOR THIS VIDEO (follow them): ${notes}\n` : ''}FORMAT: "${fmt.label}" - ${fmt.desc}
 STRUCTURE: ${fmt.structure}
 Hook flavour examples for this format (inspiration only, do NOT copy): ${fmt.hooks.map((h) => `"${h}"`).join(' / ')}
 
-LENGTH: the finished video must run about ${plan.sec} seconds. So write ${plan.min}-${plan.max} spoken words in total (target ${plan.target}) across ${plan.minLines}-${plan.maxLines} lines.${fmt.shlok ? ' (The chanted verse adds about 12 seconds by itself, already counted.)' : ''}
+LENGTH: the finished video must run about ${plan.sec} seconds (short on purpose: it should loop). So write ${plan.min}-${plan.max} spoken words in total (target ${plan.target}) across ${plan.minLines}-${plan.maxLines} lines.${fmt.shlok ? ' (The chanted verse adds about 12 seconds by itself, already counted.)' : ''}
 Do NOT reuse or paraphrase these recent hooks:
 ${recentHooks.length ? recentHooks.slice(0, 12).map((h) => `- ${h}`).join('\n') : '(none)'}
 
 ${grounding}
 ${CRAFT}
+${VIRAL}
 ${LANGUAGE_RULES}
 ${FIELDS}
 - Image mood for this format: ${IMAGE_MOOD[fmt.id] || IMAGE_MOOD.classic}
@@ -136,7 +153,9 @@ Return JSON ONLY:
   "format_id": "${fmt.id}",
   "verse_id": ${fmt.shlok ? '"bg-2-47"' : 'null'},
   "grounding_id": ${fmt.shlok ? 'null' : '"bg-2-47"'},
-  "hook_text": "max 7 words, Roman Hinglish, big on-screen title in the first 2 seconds",
+  "hook_text": "max 7 words, Roman Hinglish, big on-screen title in the first 2 seconds (it must make a stranger stop scrolling)",
+  "pillar": "${spec.pillar ? spec.pillar.id : 'overthinking | career | relationships'}",
+  "hook_style": "${spec.hookStyle.id}",
   "lines": [ { "speak": "...", "image": "...", "visual": "..." } ],
   "shlok_line_index": ${fmt.shlok ? '4' : 'null'},
   "cta": "max 6 words on-screen end text, different style each time (comment prompt / save / follow for part 2)",
@@ -160,7 +179,8 @@ CHECKLIST
 6. Faithfulness: ${fmt.shlok ? 'keep one verse_id from the candidates below and make sure the line before the chant leads into it naturally; meaning must stay faithful.' : 'stay faithful to the grounding teaching; no invented facts or quotes. verse_id stays null.'}
 7. Every "image" prompt matches its line's emotion, no close-up faces, consecutive images differ. Keep "*word*" emphasis (1 per line). Keep the field name "speak" and keep it in Devanagari + English-in-Latin (never Roman Hindi); keep it plain everyday spoken Hindi, replace any heavy / bookish word with the simple one.
 8. STORY CHECK: is it still ONE story with a named character, scenes, a turn near the middle and a result? If any part turned into advice or a lecture, rewrite it as a scene. No word like shlok / verse / Sanskrit.
-9. Keep the same JSON schema and field names.
+9. RETENTION CHECK: the first line is 8 words or fewer and starts inside the tensest moment; there is a re-hook every ~3 lines; every line is ONE easy-to-picture idea of 12 words or fewer; the Gita / Krishna idea appears only in the last 2-3 lines in one plain sentence; the last line loops back to the first or asks about the viewer's own life.
+10. Keep the same JSON schema and field names (keep "pillar" and "hook_style" as they are).
 ${issues.length ? `\nKNOWN PROBLEMS THAT MUST BE FIXED:\n${issues.map((i) => `- ${i}`).join('\n')}\n` : ''}
 ${fmt.shlok ? `Verse candidates:\n${verseBlock(cands)}\n` : ''}
 DRAFT:
@@ -175,6 +195,8 @@ function normalize(raw, spec) {
   if (!spec.fmt.shlok) { s.verseId = null; s.shlokLineIndex = null; } // no chant for these formats
   s.formatId = spec.fmt.id;
   s.targetSec = spec.plan.sec;
+  s.pillar = spec.pillar?.id || pillarById(raw.pillar)?.id || '';
+  s.hookStyle = spec.hookStyle.id; // the style we asked for, so the tag is always right
   s.lines.forEach((l) => { if (!l.visual) l.visual = spec.topic; if (!l.image) l.image = `${l.visual}, cinematic, moody lighting`; });
   return s;
 }
@@ -186,7 +208,11 @@ export async function generateScript(topic, ctx = {}) {
   const fmt = formatById(ctx.formatId) || formatById(pickFormat({ recent: ctx.recentFormats || [] }));
   const plan = lengthPlan(ctx.targetSec || randomTargetSec(), fmt.shlok);
   const cands = candidateVerses(topic, ctx.recentVerseIds || [], fmt.shlok ? 6 : 4);
-  const spec = { fmt, plan, cands, topic, recentHooks: ctx.recentHooks || [], recentVerseIds: ctx.recentVerseIds || [] };
+  const spec = {
+    fmt, plan, cands, topic, recentHooks: ctx.recentHooks || [], recentVerseIds: ctx.recentVerseIds || [],
+    pillar: pillarById(ctx.pillar), // null = the writer picks one of the 3 pillars
+    hookStyle: hookStyleById(pickHookStyle(ctx.recentHookStyles || [])),
+  };
   const model = config.gemini.scriptModel;
 
   let draft, lastErr;

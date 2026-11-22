@@ -59,7 +59,7 @@ textarea{resize:vertical}
 .bar{height:6px;background:var(--s3);border-radius:99px;overflow:hidden}.bar i{display:block;height:100%;background:var(--gold);transition:width .5s}
 .va{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:auto}
 .more{position:relative}.more summary{list-style:none;cursor:pointer}.more summary::-webkit-details-marker{display:none}
-.menu{position:absolute;right:-100;bottom:calc(100% + 6px);background:var(--s2);border:1px solid var(--line);border-radius:12px;padding:6px;min-width:200px;z-index:20;box-shadow:0 12px 30px rgba(0,0,0,.5);display:flex;flex-direction:column}
+.menu{position:absolute;right:0;bottom:calc(100% + 6px);background:var(--s2);border:1px solid var(--line);border-radius:12px;padding:6px;min-width:200px;z-index:20;box-shadow:0 12px 30px rgba(0,0,0,.5);display:flex;flex-direction:column}
 .menu button,.menu a{text-align:left;background:none;border:0;padding:8px 10px;border-radius:8px;cursor:pointer;color:var(--text);text-decoration:none;font-size:13.5px}.menu button:hover,.menu a:hover{background:var(--s3)}
 .err{color:var(--red);font-size:12.5px}
 /* grid */
@@ -126,6 +126,7 @@ pre.tpl{background:var(--bg);border:1px solid var(--line);border-radius:10px;pad
     <section id="v-today" class="wrap">
       <div class="hd"><div><h1 id="tTitle">Aaj</h1><div class="sub" id="tSub"></div></div><div class="grow"></div>
         <button class="btn ai" id="tScripts" onclick="writeScripts()">✨ Saari scripts likho</button>
+        <button class="btn" id="tDel" style="display:none" onclick="sure(this,()=>delDay(plan.today),'Pakka? Aaj ka plan delete')">🗑 Aaj ka plan delete</button>
         <button class="btn gold" id="tGen" onclick="genAll()">Sab videos banao</button></div>
       <div class="cmd"><span class="spark">✨</span><input id="cmd" placeholder="AI se kuch bhi bolo: &quot;aaj ke liye 3 naye topic do&quot;, &quot;breakup pe reel ka script likho&quot;…" onkeydown="if(event.key==='Enter')cmdSend()"><button class="btn ai" onclick="cmdSend()">Bhejo</button></div>
       <div class="sugs" id="sugs"></div>
@@ -224,6 +225,8 @@ function go(v){view=v;['today','videos','plan','uploads','settings'].forEach(k=>
 function toggleAI(force){const on=force??!$('app').classList.contains('ai-on');$('app').classList.toggle('ai-on',on);$('aiBtn').classList.toggle('on',on);localStorage.setItem('aiOn',on?'1':'');if(on)setTimeout(()=>$('dIn').focus(),250)}
 const dayLabel=d=>new Date(d+'T00:00:00').toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'short'});
 const estSec=s=>Math.round((s.lines||[]).reduce((n,l)=>n+clean(l.show).split(/\s+/).filter(Boolean).length,0)/2.4+2);
+const PILLAR_NAME={overthinking:'Overthinking',career:'Career',relationships:'Rishte'};
+const HOOK_NAME={mid_scene:'hook: kahani ke beech se',number:'hook: number',contradiction:'hook: ulta sach',you_call:'hook: seedha tum',question:'hook: sawal'};
 const fmtName=id=>(formats.find(f=>f.id===id)||{}).label||'';
 
 /* ================= TODAY ================= */
@@ -252,10 +255,11 @@ function vcard(i){
   const open=i.status==='planned';
   const menu=`<details class="more"><summary class="btn sm">⋯</summary><div class="menu">
     ${open?`<button onclick="openStudio('${i._id}')">Script padho / badlo</button><button onclick="suggestTopic('${i._id}')">Naya topic (AI)</button><button onclick="planEdit('${i._id}',{status:'skipped'})">Aaj skip karo</button>`:''}
+    ${!r&&['planned','skipped'].includes(i.status)?`<button class="red" onclick="sure(this,()=>delItem('${i._id}'),'Pakka? Delete')">🗑 Ye plan delete karo</button>`:''}
     ${r&&r.videoFile&&!GEN.includes(r.status)?`<a href="/media/videos/${r.videoFile}" download="${esc(i.topic)}.mp4">Download</a><button onclick="act('${r._id}','regenerate','?mode=render')">Naya look (same script)</button><button onclick="act('${r._id}','regenerate','?mode=script')">Naya script + video</button>`:''}
     ${r&&r.script?`<button onclick="copyCap('${r._id}')">Caption copy</button>`:''}</div></details>`;
   return `<div class="vc"><div>${ph}</div><div class="vb">
-    <div class="vt"><span class="${label[1]}">${label[0]}</span>${long?'<span class="chip p">LONG · sirf YouTube</span>':''}${s&&fmtName(s.formatId)?`<span class="chip">${esc(fmtName(s.formatId))}</span>`:''}${s&&!long?`<span class="chip ${est<28||est>125?'r':''}">~${est}s</span>`:''}<span class="chip">⏰ ${esc(i.publishTime||'')}</span>${platChips(r)}</div>
+    <div class="vt"><span class="${label[1]}">${label[0]}</span>${long?'<span class="chip p">LONG · sirf YouTube</span>':''}${s&&fmtName(s.formatId)?`<span class="chip">${esc(fmtName(s.formatId))}</span>`:''}${(s&&s.pillar)||i.pillar?`<span class="chip">${esc(PILLAR_NAME[(s&&s.pillar)||i.pillar]||'')}</span>`:''}${s&&s.hookStyle&&HOOK_NAME[s.hookStyle]?`<span class="chip">${esc(HOOK_NAME[s.hookStyle])}</span>`:''}${s&&!long?`<span class="chip ${est<28||est>125?'r':''}">~${est}s</span>`:''}<span class="chip">⏰ ${esc(i.publishTime||'')}</span>${platChips(r)}</div>
     ${hook?`<div class="vh">${esc(hook)}</div><div class="vtopic">${esc(i.topic)}</div>`:`<div class="vh">${esc(i.topic)}</div>`}
     ${GEN.includes(r&&r.status)||st==='paused'?`<div class="bar"><i style="width:${r.progress||2}%"></i></div>`:`<div class="vs">${esc(body)}</div>`}
     ${st==='failed'&&r.error?`<div class="err">${esc(r.error)}</div>`:''}${st==='uploaderr'?`<div class="err">${esc(platErr(r))}</div>`:''}
@@ -270,7 +274,9 @@ async function loadToday(){
   $('prog').innerHTML=[['Script baaki',n(i=>i.status==='planned'&&!i.script)],['Ban rahi / line mein',n(i=>['busy','paused'].includes(NEXT(i)[0])||(i.status==='planned'&&i.script))],['Review',n(i=>NEXT(i)[0]==='review')],['Post ho gayi',n(i=>NEXT(i)[0]==='done'||NEXT(i)[0]==='sched')]].map(([l,v])=>`<div class="pstep"><b>${v}</b><span>${l}</span></div>`).join('');
   $('tGen').textContent=open.length?`Sab ${open.length} video banao (ek ke baad ek)`:'Sab ho gaya';$('tGen').disabled=!open.length;
   $('tScripts').style.display=open.some(i=>!i.script&&!i.scriptBusy)?'':'none';
-  if(!items.length)$('tList').innerHTML='<div class="empty">Aaj kuch planned nahi. AI se topic maango ↑ ya Settings mein shorts/day set karo.</div>';
+  $('tDel').style.display=items.some(i=>['planned','skipped'].includes(i.status)&&!i.reel)?'':'none';
+  const todayGone=(plan.cleared||[]).includes(plan.today);
+  if(!items.length)$('tList').innerHTML=todayGone?`<div class="empty">Aaj ka plan delete kar diya gaya hai.<br><button class="btn gold" style="margin-top:10px" onclick="restoreDay('${plan.today}')">↺ Aaj ka plan wapas banao</button></div>`:'<div class="empty">Aaj kuch planned nahi. AI se topic maango ↑ ya Settings mein shorts/day set karo.</div>';
   else{if($('tList').querySelector('.empty'))$('tList').innerHTML='';patch($('tList'),items,i=>i._id,vcard)}
   planBanner(st);
   $('tNote').textContent=`Files ${st.keepHours} ghante baad auto-delete hoti hain; record aur links Plan → Calendar mein rehte hain.`;
@@ -278,6 +284,9 @@ async function loadToday(){
 }
 async function pauseVid(id){const r=await post(`/reels/${id}/pause`);toast(r.error||'Rok rahe hain: abhi ka chhota step khatam hote hi ruk jayegi, kaam saved rahega');setTimeout(refresh,1500)}
 async function resumeVid(id,now){const r=await post(`/reels/${id}/resume${now?'?now=1':''}`);toast(r.error||(now?'Abhi chalu: chal rahi video ruk gayi':'Resume: line mein sabse aage'));setTimeout(refresh,600)}
+async function delItem(id){const r=await api(`/plan/${id}`,{method:'DELETE'});toast(r.error||r.note||'Plan item delete ho gaya');refresh()}
+async function delDay(date){const r=await api(`/plan/day/${date}`,{method:'DELETE'});if(r.error)return toast(r.error);toast(r.deleted?`${r.deleted} plan item delete hue${r.kept?` · ${r.kept} video ban rahi/ban chuki hain, wo rehti hain`:''}`:'Delete karne layak kuch nahi mila');refresh()}
+async function restoreDay(date){const r=await post(`/plan/day/${date}/restore`);toast(r.error||'Plan wapas ban gaya');refresh()}
 async function genAll(){const r=await post('/plan/run-today');toast(`${r.started||0} video shuru`);loadToday()}
 async function writeScripts(){const r=await post(`/plan/day/${plan.today}/scripts`);toast(r.started?`${r.started} script likhi ja rahi hain`:'Kuch likhna baaki nahi');loadToday()}
 async function runItem(id){await post(`/plan/${id}/run`);toast('Video shuru ho gayi');loadToday()}
@@ -312,13 +321,13 @@ async function loadPlan(){if(planMode==='cal')return loadCal();const[p,st]=await
   planBanner(st);
   $('pSub').textContent=`${st.shorts} shorts/din · ${st.automation?'automation ON':'automation OFF'}`;
   const days={};plan.items.forEach(i=>(days[i.date]=days[i.date]||[]).push(i));
-  $('pBody').innerHTML=Object.keys(days).map(d=>`<div class="day"><h3 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">${d===plan.today?'Aaj · ':''}${dayLabel(d)}${days[d].some(x=>x.status==='planned')?`<button class="btn sm" onclick="genPlanDay('${d}',this)">▶ Is din ki sab generate karo</button>`:''}</h3>${days[d].map(prow).join('')}</div>`).join('')||'<div class="empty">Plan khaali hai.</div>'}
+  $('pBody').innerHTML=Object.keys(days).map(d=>`<div class="day"><h3 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">${d===plan.today?'Aaj · ':''}${dayLabel(d)}${days[d].some(x=>x.status==='planned')?`<button class="btn sm" onclick="genPlanDay('${d}',this)">▶ Is din ki sab generate karo</button>`:''}${days[d].some(x=>['planned','skipped'].includes(x.status)&&!x.reel)?`<button class="btn sm red" onclick="sure(this,()=>delDay('${d}'),'Pakka? Delete')">🗑 Is din ka plan delete</button>`:''}</h3>${days[d].map(prow).join('')}</div>`).join('')||'<div class="empty">Plan khaali hai.</div>'}
 function prow(i){const lock=i.status!=='planned',short=i.kind!=='long';return `<div class="pr"><span class="chip ${short?'':'p'}">${short?'SHORT':'LONG'}</span>
   <input value="${esc(i.topic)}" ${lock?'disabled':''} onchange="planEdit('${i._id}',{topic:this.value})">
   ${short?`<select ${lock?'disabled':''} onchange="planEdit('${i._id}',{formatId:this.value})">${fmtOpts(i.formatId)}</select>`:'<span></span>'}
   <input type="time" value="${esc(i.publishTime||'')}" ${lock?'disabled':''} onchange="planEdit('${i._id}',{publishTime:this.value})">
   <span class="chip ${i.script?'g':''}">${i.scriptBusy?'likh raha…':i.script?'Script ✓':i.reel?esc(i.reel.status):esc(i.status)}</span>
-  <span style="display:flex;gap:6px"><button class="btn sm ai" onclick="openStudio('${i._id}',${i.script?'false':'true'})">✨ Script</button>${lock?'':`<button class="btn sm gold" onclick="genPlanItem('${i._id}',this)">▶ Generate</button><button class="btn sm" onclick="suggestTopic('${i._id}')">Naya topic</button>`}</span></div>`}
+  <span style="display:flex;gap:6px"><button class="btn sm ai" onclick="openStudio('${i._id}',${i.script?'false':'true'})">✨ Script</button>${lock?'':`<button class="btn sm gold" onclick="genPlanItem('${i._id}',this)">▶ Generate</button><button class="btn sm" onclick="suggestTopic('${i._id}')">Naya topic</button>`}${!i.reel&&['planned','skipped'].includes(i.status)?`<button class="btn sm red" title="Ye plan delete karo" onclick="sure(this,()=>delItem('${i._id}'),'Pakka?')">🗑</button>`:''}</span></div>`}
 async function genPlanItem(id,btn){if(btn)btn.disabled=true;const r=await post(`/plan/${id}/run`);toast(r.error||(r.started?'Video banana shuru ✓ (line mein lag gayi)':(r.note||'Ye video pehle se bani hui hai, skip')));loadPlan()}
 async function genPlanDay(date,btn){if(btn)btn.disabled=true;const r=await post(`/plan/day/${date}/run`);toast(r.error||(r.started?`${r.started} video banana shuru ✓`:'Is din ki saari videos pehle se bani hui hain, skip'));loadPlan()}
 const b64=f=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]);r.onerror=rej;r.readAsDataURL(f)});
@@ -475,8 +484,8 @@ async function loadSettings(){const[st,s2]=await Promise.all([api('/settings'),a
   const chk=(k,l,h='')=>`<label class="tg"><input type="checkbox" id="s_${k}" ${st[k]?'checked':''}><span><b>${l}</b>${h?`<br><span class="help">${h}</span>`:''}</span></label>`;
   const inp=(k,l,t='text',x='')=>`<div class="f"><label>${l}</label><input id="s_${k}" type="${t}" ${x} value="${esc(st[k]??'')}"></div>`;
   $('setBody').innerHTML=`<div class="box"><h4>Roz ka automation</h4><div class="form">${chk('automation','Roz khud videos banao','Set time par aaj ki videos shuru ho jaati hain')}${inp('generateAt','Generation time (IST)','time')}${inp('shorts','Shorts per day','number','min=0 max=10')}${inp('long','Long videos per day (1 = roz ek 5-min video)','number','min=0 max=3')}
-    <div class="f"><label>Publish times (reels, comma)</label><input id="s_shortSlots" value="${esc((st.shortSlots||[]).join(', '))}"></div>${inp('longSlot','Long video (5 min, sirf YouTube) ka time','time')}${inp('planDays','Kitne din aage plan','number','min=1 max=30')}
-    <div class="f"><label>Reel ki length</label><select id="s_reelLength">${[['auto','Auto 30-60s'],['30','30s'],['45','45s'],['60','60s'],['90','90s (1.5 min)'],['120','120s (2 min, max)']].map(([v,l])=>`<option value="${v}" ${v===String(st.reelLength)?'selected':''}>${l}</option>`).join('')}</select></div>
+    <div class="f"><label>Publish times (reels), comma se: 07:30, 13:00, 20:30</label><input id="s_shortSlots" value="${esc((st.shortSlots||[]).join(', '))}"></div>${inp('longSlot','Long video (5 min, sirf YouTube) ka time','time')}${inp('planDays','Kitne din aage plan','number','min=1 max=30')}
+    <div class="f"><label>Reel ki length</label><select id="s_reelLength">${[['auto','Auto 28-40s (best)'],['25','25s'],['30','30s'],['35','35s'],['45','45s'],['60','60s'],['90','90s (1.5 min)'],['120','120s (2 min, max)']].map(([v,l])=>`<option value="${v}" ${v===String(st.reelLength)?'selected':''}>${l}</option>`).join('')}</select></div>
     <div class="f"><label>Long video ki length (max 10 min)</label><select id="s_longMinutes">${[[5,'5 min'],[7,'7 min'],[10,'10 min (max)']].map(([v,l])=>`<option value="${v}" ${v===Number(st.longMinutes||5)?'selected':''}>${l}</option>`).join('')}</select></div>
     ${chk('prewriteScripts','Script pehle se likho (00:15)','Home par topic + script ready dikhta hai')}${inp('keepHours','Files delete hon (ghante)','number','min=1 max=168')}${chk('autoApprove','Auto-approve','Off = pehle tum review karoge (recommended)')}</div></div>
   <div class="box"><h4>Publishing</h4><p class="help" style="margin-top:0">Reels (30-120 sec) jaati hain <b>YouTube + Instagram</b> dono par. Long video (5-10 min) sirf <b>YouTube</b> par. Status Uploads page par dikhta hai.</p><div class="form">${chk('autoPublish','Time par khud post karo')}<div class="f"><label>YouTube visibility</label><select id="s_youtubePrivacy">${['public','unlisted','private'].map(v=>`<option ${v===st.youtubePrivacy?'selected':''}>${v}</option>`).join('')}</select></div>
@@ -492,7 +501,7 @@ const KN={gemini:'Gemini',cloudflare:'Cloudflare images',pollinations:'Pollinati
 async function testVoice(){$('vt').disabled=true;$('vm').textContent='Sample ban raha hai…';await put('/settings',{voiceGemini:$('s_voiceGemini').value,voiceSarvam:$('s_voiceSarvam').value.trim(),voiceEleven:$('s_voiceEleven').value.trim()});
   const r=await fetch('/api/voice/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});$('vt').disabled=false;if(!r.ok){$('vm').textContent='Fail: '+((await r.json()).error||r.status);return}$('vm').textContent='Chal raha hai…';const a=new Audio(URL.createObjectURL(await r.blob()));a.onended=()=>$('vm').textContent='';a.play();loadStatus()}
 async function saveSettings(){const g=k=>$('s_'+k),b={};['automation','prewriteScripts','autoApprove','autoPublish','youtube','instagram'].forEach(k=>b[k]=g(k).checked);['generateAt','longSlot','youtubePrivacy','reelLength'].forEach(k=>b[k]=g(k).value);['shorts','long','planDays','keepHours','longMinutes'].forEach(k=>b[k]=+g(k).value);['voiceGemini','voiceSarvam','voiceEleven'].forEach(k=>b[k]=g(k).value.trim());b.shortSlots=g('shortSlots').value.split(',').map(s=>s.trim()).filter(Boolean);
-  const r=await put('/settings',b);toast(r.error||'Settings save ho gayi ✓');loadStatus()}
+  const r=await put('/settings',b);const rt=r.retimed;toast(r.error||(rt&&(rt.plans||rt.reels)?`Save ho gayi ✓ Naye time par: ${rt.plans} plan aur ${rt.reels} bani hui video${rt.locked?` (${rt.locked} video pehle hi upload/schedule ho chuki, unka time nahi badla)`:''}`:'Settings save ho gayi ✓'),rt&&(rt.plans||rt.reels)?6500:3200);loadStatus()}
 async function loadStatus(){const s=await api('/status');$('dot').classList.toggle('ok',!s.error&&s.voice&&s.voice.length>0);$('dot').title=s.error?'Server error':`Voice: ${(s.voice||[]).join(', ')||'none'} · Images: ${(s.images||[]).join(', ')||'stock'} · Music: ${s.music}`}
 
 /* boot */

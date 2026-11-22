@@ -1,6 +1,6 @@
 import { config } from '../config.js';
 import { VERSES, verseById } from '../verses.js';
-import { FORMATS, formatById } from '../formats.js';
+import { FORMATS, PILLARS, formatById, hookStyleById, pillarById } from '../formats.js';
 import { withKeys } from './keypool.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -76,6 +76,8 @@ export function validateScript(s) {
     targetSec: Number(s.target_sec ?? s.targetSec) || null,
     lines,
     shlokLineIndex: null,
+    pillar: pillarById(s.pillar)?.id || '',
+    hookStyle: hookStyleById(s.hook_style ?? s.hookStyle)?.id || '',
     hookText: String(s.hook_text ?? s.hookText ?? lines[0].show ?? lines[0].speak).trim(),
     cta: String(s.cta || 'Follow for daily Gita wisdom').trim(),
     caption: String(s.caption || '').trim(),
@@ -84,7 +86,7 @@ export function validateScript(s) {
 }
 export const toApiShape = (s) => ({
   format_id: s.formatId, verse_id: s.verseId, grounding_id: s.groundingId, target_sec: s.targetSec, hook_text: s.hookText, lines: s.lines, shlok_line_index: s.shlokLineIndex,
-  cta: s.cta, caption: s.caption, hashtags: s.hashtags,
+  cta: s.cta, caption: s.caption, hashtags: s.hashtags, pillar: s.pillar, hook_style: s.hookStyle,
 });
 
 const HOOK_STYLES = [
@@ -412,11 +414,14 @@ Return JSON ONLY: { "shorts": ["..."], "long": ["..."] }`;
 /** Topics for planned shorts. slots = [{formatId}] -> one topic per slot, each fitting its format. */
 export async function generateWeekTopics({ slots, avoid = [], brief = '' }) {
   if (!slots.length) return [];
-  const list = slots.map((sl, i) => { const f = formatById(sl.formatId); return `${i + 1}. format "${f.label}" - ${f.desc}`; }).join('\n');
-  const prompt = `Plan content for a Hindi/Hinglish channel "Bhagavad Gita For Modern Problems" (young Indian audience, 18-35, 30-60 second reels).
-${brief ? `THE CREATOR'S BRIEF FOR THIS PERIOD (follow it): ${brief}\n` : ''}Give exactly ${slots.length} topics, one per numbered slot, each one fitting the slot's FORMAT:
+  const list = slots.map((sl, i) => {
+    const f = formatById(sl.formatId), p = pillarById(sl.pillar);
+    return `${i + 1}. format "${f.label}" - ${f.desc}${p ? `\n   PILLAR "${p.label}": ${p.desc}. Possible angles (inspiration only): ${p.angles.join('; ')}` : ''}`;
+  }).join('\n');
+  const prompt = `Plan content for a Hindi/Hinglish channel "Bhagavad Gita For Modern Problems" (young Indian audience, 18-35, 25-40 second reels). The channel talks about ONLY 3 pillars: ${PILLARS.map((p) => p.label).join(' | ')}. Every topic must sit inside the PILLAR of its slot; the Gita idea only appears inside the story.
+${brief ? `THE CREATOR'S BRIEF FOR THIS PERIOD (follow it): ${brief}\n` : ''}Give exactly ${slots.length} topics, one per numbered slot, each one fitting the slot's FORMAT and PILLAR:
 ${list}
-Rules: specific and relatable (max 8 words), e.g. "Overthinking at 3 AM", "Karn ka sabse bada dukh", "Gita ka pehla shabd kya hai?", "Dost se dhokha". All topics must differ from each other and from: ${avoid.slice(-80).join(', ') || 'none'}. Spread different life problems (work, love, family, money, health of mind, comparison, anger, fear...) across the list.
+Rules: a topic is ONE specific situation a viewer instantly recognises as their own (max 8 words), with a concrete detail (a time, a number, an object, a person), e.g. "Raat 2 baje purani chat padhna", "11 resume, zero reply", "Dost ki offer letter dekhi", "Usne block kar diya". Not an abstract theme ("anxiety", "success"). All topics must differ from each other and from: ${avoid.slice(-80).join(', ') || 'none'}. You may make AT MOST ONE topic a sequel of a strong recent topic written as "Original topic - Part 2".
 Return JSON ONLY: { "topics": ["...", "..."] } with exactly ${slots.length} strings in the same order.`;
   const o = await callGemini({ contents: asContents(prompt), temperature: 1 });
   return (o.topics || []).map((t) => String(t).trim());

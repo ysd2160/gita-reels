@@ -1,7 +1,7 @@
 // What was made recently (hooks, shlokas, formats), so every new script is different from it.
 import { Plan, Reel } from '../models.js';
 import { getSettings } from './settings.js';
-import { MAX_SEC, formatById, pickFormat, randomTargetSec } from '../formats.js';
+import { MAX_SEC, MIN_SEC, formatById, pickFormat, randomTargetSec } from '../formats.js';
 import { generateScript } from './scriptwriter.js';
 import { scriptFromText } from './gemini.js';
 
@@ -15,22 +15,24 @@ export async function recentContext({ excludePlanId = null, kind = 'short' } = {
     recentHooks: all.map((s) => s.hookText || s.title).filter(Boolean),
     recentVerseIds: all.map((s) => s.verseId || s.groundingId).filter(Boolean),
     recentFormats: all.map((s) => s.formatId || (s.verseId ? 'classic' : null)).filter(Boolean),
+    recentPillars: all.map((s) => s.pillar).filter(Boolean),
+    recentHookStyles: all.map((s) => s.hookStyle).filter(Boolean),
   };
 }
 
-/** target length (seconds) from Settings: 'auto' = random 34-56 s */
+/** target length (seconds) from Settings: 'auto' = random 28-40 s */
 export async function resolveTargetSec(wanted) {
-  if (Number(wanted) >= 30) return Math.min(MAX_SEC, Number(wanted));
+  if (Number(wanted) >= MIN_SEC) return Math.min(MAX_SEC, Number(wanted));
   const st = await getSettings();
-  return Number(st.reelLength) >= 30 ? Math.min(MAX_SEC, Number(st.reelLength)) : randomTargetSec();
+  return Number(st.reelLength) >= MIN_SEC ? Math.min(MAX_SEC, Number(st.reelLength)) : randomTargetSec();
 }
 
 /** One call that writes a short script for a topic with all the context (format, length, no repeats) */
-export async function writeShortScript({ topic, formatId, targetSec, notes, excludePlanId }) {
+export async function writeShortScript({ topic, formatId, targetSec, notes, excludePlanId, pillar }) {
   const st = await getSettings();
   const ctx = await recentContext({ excludePlanId });
   const fmt = formatById(formatId) || formatById(pickFormat({ recent: ctx.recentFormats, shlokPercent: st.shlokPercent }));
-  return generateScript(topic, { ...ctx, formatId: fmt.id, targetSec: await resolveTargetSec(targetSec), notes, shlokPercent: st.shlokPercent });
+  return generateScript(topic, { ...ctx, formatId: fmt.id, targetSec: await resolveTargetSec(targetSec), notes, pillar, shlokPercent: st.shlokPercent });
 }
 
 /** script text pasted by the creator / found inside an imported plan: kept word for word */

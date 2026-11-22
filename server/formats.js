@@ -1,11 +1,11 @@
-// Reel FORMATS: every video is a STORY (character -> trouble -> turn -> result), told in 30-60 seconds.
+// Reel FORMATS: every video is a STORY (character -> trouble -> turn -> result), told in 25-40 seconds (shorter loops and hooks hold viewers better).
 // The different formats only change the kind of story, so videos stop looking the same.
 // There is NO shlok / chant anywhere (shlok is always false). The Gita idea lives inside the story, in plain Hinglish.
 //
 // Speaking speed used for length maths: ~2.4 Hinglish words per second (TTS + natural pauses).
 export const WORDS_PER_SEC = 2.4;
 export const CHANT_SEC = 12.5; // chant + hold, average
-export const MIN_SEC = 30;
+export const MIN_SEC = 22;
 export const MAX_SEC = 120; // a short can be up to 2 minutes (Settings -> Reel ki length)
 
 export const FORMATS = [
@@ -68,12 +68,55 @@ export function lengthPlan(targetSec, hasShlok) {
   T = Math.min(MAX_SEC, Math.max(hasShlok ? 40 : MIN_SEC, T));
   const speechSec = Math.max(14, T - 2 - (hasShlok ? CHANT_SEC : 0));
   const target = Math.round(speechSec * WORDS_PER_SEC);
-  const lines = Math.max(7, Math.round(target / 8));
+  const lines = Math.max(7, Math.round(target / 7.5)); // ~7.5 words a line = a new picture every 2-4 seconds
   return { sec: T, target, min: Math.round(target * 0.88), max: Math.round(target * 1.12), lines, minLines: Math.max(6, lines - 3), maxLines: lines + 4 };
 }
 
 export function randomTargetSec() {
-  return 34 + Math.floor(Math.random() * 23); // 34..56 s
+  return 28 + Math.floor(Math.random() * 13); // 28..40 s (short videos loop and hold viewers better)
+}
+
+// ---------------------------------------------------------------- 3 content pillars (the whole channel talks about ONLY these)
+export const PILLARS = [
+  {
+    id: 'overthinking', label: 'Overthinking aur anxiety',
+    desc: 'raat ki overthinking, future ka dar, "log kya kahenge", akelapan, neend na aana, khud se ladai',
+    angles: ['raat ke 2 baje wale khayal', 'kal ke exam / result ka dar', 'purani galti jo yaad aati rehti hai', 'sab theek dikhte hain par andar se thake hue', 'phone mein last seen dekhte rehna'],
+  },
+  {
+    id: 'career', label: 'Career, job aur "main peeche reh gaya"',
+    desc: 'resume aur interview, rejection, dost ki salary / success se tulna, ghar ka pressure, padhai ka dar, kuch na kar paane ka ehsaas',
+    angles: ['resume bheja par jawab nahi aaya', 'dost ki offer letter dekhi', 'ghar mein "beta kya kar raha hai?" wala sawaal', 'result tumhare haath mein nahi, koshish hai', 'start-up ya naukri chhodne ka dar'],
+  },
+  {
+    id: 'relationships', label: 'Pyaar, breakup aur rishte',
+    desc: 'breakup, block kar diya jaana, ghosting, dhokha, parivaar se doori, dost jo badal gaye, kisi ko bhoolna',
+    angles: ['usne block kar diya', 'purani chat baar-baar padhna', 'dost jo ab call nahi karta', 'maa-papa se baat na kar paana', 'kisi ko maaf karne ki koshish'],
+  },
+];
+export const pillarById = (id) => PILLARS.find((p) => p.id === id) || null;
+
+/** the pillar that was used least recently (recent = newest first) */
+export function pickPillar(recent = []) {
+  const score = (p) => { const i = recent.indexOf(p.id); return i === -1 ? 99 : i; };
+  const best = Math.max(...PILLARS.map(score));
+  const pool = PILLARS.filter((p) => score(p) === best);
+  return pool[Math.floor(Math.random() * pool.length)].id;
+}
+
+// ---------------------------------------------------------------- hook styles (rotated + saved on every video so we can see which one works)
+export const HOOK_STYLES = [
+  { id: 'mid_scene', label: 'dropped into the tensest moment of the story', ex: 'Usne 11 baar resume bheja. Ek bhi jawab nahi.' },
+  { id: 'number', label: 'a specific number that hurts or surprises', ex: '3 saal. 400 applications. Zero offer.' },
+  { id: 'contradiction', label: 'a contradiction: what everyone thinks vs. what was true', ex: 'Sab kehte the wo jeet gaya. Wo andar se *toot* chuka tha.' },
+  { id: 'you_call', label: 'speaking directly to the viewer about a secret habit of theirs', ex: 'Tum raat 2 baje yahi to kar rahe ho.' },
+  { id: 'question', label: 'a question the viewer must know the answer to', ex: 'Usne block kyun kiya? Wajah ye nahi thi.' },
+];
+export const hookStyleById = (id) => HOOK_STYLES.find((h) => h.id === id) || null;
+export function pickHookStyle(recent = []) {
+  const pool = HOOK_STYLES.filter((h) => !recent.slice(0, 3).includes(h.id));
+  const list = pool.length ? pool : HOOK_STYLES;
+  return list[Math.floor(Math.random() * list.length)].id;
 }
 
 /** weighted pick that avoids the last few formats and (optionally) formats already used the same day */

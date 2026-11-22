@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Player, PlayerRef } from '@remotion/player';
-import { DEFAULT_LAYOUT, Layout, Reel, ReelProps, Scene } from '../remotion/Reel';
+import { DEFAULT_LAYOUT, Layout, Reel, ReelProps, Scene, VARIANTS_LIST, VARIANT_LAYOUT, Variant } from '../remotion/Reel';
 import { TEMPLATES } from '../remotion/templates';
 
 const FPS = 30;
@@ -229,6 +229,7 @@ function App() {
                 <Row label="Text colour"><input type="color" value={p.textColor || TEMPLATES[p.style.templateId]?.text || '#ffffff'} onChange={(e) => up({ textColor: e.target.value })} /></Row>
               </div>
               <button className="btn sm" onClick={() => up({ accent: '', textColor: '' })}>Reset colours</button>
+              <Row label="Video format (layout)"><select value={p.style.variant || 'classic'} onChange={(e) => { const v = e.target.value as Variant; setP((o) => (o ? { ...o, style: { ...o.style, variant: v }, layout: { ...DEFAULT_LAYOUT[o.format], ...o.layout, ...(o.format === 'short' ? { hookY: DEFAULT_LAYOUT.short.hookY, hookSize: 1, capY: DEFAULT_LAYOUT.short.capY, capSize: 1, shlokY: DEFAULT_LAYOUT.short.shlokY, ctaY: DEFAULT_LAYOUT.short.ctaY, showProgress: true, ...VARIANT_LAYOUT[v] } : {}) } } : o)); }} disabled={p.format === 'long'}>{VARIANTS_LIST.map((m) => <option key={m} value={m}>{({ classic: 'classic (big hook, captions, CTA)', headline: 'headline (title stays on top)', kinetic: 'kinetic (one big word at a time)', frame: 'frame (picture in a window)', cinema: 'cinema (black bars + subtitles)' } as Record<string, string>)[m]}</option>)}</select></Row>
               <Row label="Caption style"><select value={p.style.captionStyle} onChange={(e) => up({ style: { ...p.style, captionStyle: e.target.value as never } })}>{['pop', 'box', 'glow'].map((m) => <option key={m}>{m}</option>)}</select></Row>
               <Row label="Hook style"><select value={p.style.hookStyle} onChange={(e) => up({ style: { ...p.style, hookStyle: e.target.value as never } })}>{['big', 'band'].map((m) => <option key={m}>{m}</option>)}</select></Row>
               <Row label="Shlok card style"><select value={p.style.shlokStyle} onChange={(e) => up({ style: { ...p.style, shlokStyle: e.target.value as never } })}>{['card', 'minimal', 'band'].map((m) => <option key={m}>{m}</option>)}</select></Row>

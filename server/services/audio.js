@@ -1,4 +1,5 @@
 // Small PCM toolbox (16-bit mono) - no ffmpeg needed.
+import { syllables, pauseMarks } from './syllables.js';
 
 export function parseWav(buf) {
   if (buf.toString('ascii', 0, 4) !== 'RIFF') throw new Error('WAV nahi hai');
@@ -142,7 +143,38 @@ export function findLineEdges(pcm, rate, weights) {
 }
 
 /** Spoken-length weight of a line (letters only). */
-export const lineWeight = (s) => Math.max(3, s.replace(/[\s\p{P}\p{S}]/gu, '').length);
+export const lineWeight = (s) => Math.max(2, syllables(s) + 0.5 * pauseMarks(s));
+
+/**
+ * For every line (between its cut points) find where the voice really starts / stops and the voiced runs in between.
+ * Returns [{ on, off, runs:[[a,b],...] }] in seconds of the same pcm. Used so captions begin with the voice, not in the middle of the pause.
+ */
+export function lineVoiceDetail(pcm, rate, edges) {
+  const env = envelope(pcm, rate);
+  const peak = Math.max(...env, 1);
+  const thr = peak * 0.035;
+  const out = [];
+  for (let k = 0; k < edges.length - 1; k++) {
+    const a = Math.max(0, Math.floor(edges[k] * 100)), b = Math.min(env.length - 1, Math.ceil(edges[k + 1] * 100));
+    let runs = [];
+    for (let i = a; i <= b;) {
+      if (env[i] <= thr) { i++; continue; }
+      let j = i; while (j <= b && env[j] > thr) j++;
+      runs.push([i, j]);
+      i = j;
+    }
+    // short dips (< 70 ms, plosives / breaths) are not pauses: merge them, and drop tiny clicks
+    const merged = [];
+    for (const r of runs) {
+      const last = merged[merged.length - 1];
+      if (last && r[0] - last[1] < 7) last[1] = r[1]; else merged.push([...r]);
+    }
+    runs = merged.filter((r) => r[1] - r[0] >= 3);
+    if (!runs.length) runs = [[a, Math.max(a + 1, b)]];
+    out.push({ on: runs[0][0] / 100, off: runs.at(-1)[1] / 100, runs: runs.map(([x, y]) => [x / 100, y / 100]) });
+  }
+  return out;
+}
 
 /** seconds of first/last sound in a clip */
 export function voicedBounds(pcm, rate) {

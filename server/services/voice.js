@@ -2,9 +2,9 @@ import fs from 'node:fs/promises';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { config } from '../config.js';
-import { fade, findLineEdges, lineWeight, normalize, sliceSec, toWav, trimSilence, voicedBounds, parseWav } from './audio.js';
+import { fade, findLineEdges, lineVoiceDetail, lineWeight, normalize, sliceSec, toWav, trimSilence, voicedBounds, parseWav } from './audio.js';
 import { speakBatch, edgeLine, ttsSignature, edgeAllowed, lastTtsError } from './tts.js';
-import { CHANT_HOLD, GAP_LINE, GAP_SPEECH, LEAD_IN, TAIL, wordTimings } from './timeline.js';
+import { CHANT_HOLD, GAP_LINE, GAP_SPEECH, LEAD_IN, TAIL, CAP_LEAD, wordTimings, wordTimingsRuns } from './timeline.js';
 import { getShloks } from './shape.js';
 import { stopIf } from './control.js';
 
@@ -118,6 +118,7 @@ export async function buildVoice(script, dir, { signal } = {}) {
       provider = r.provider;
       const pcm = normalize(r.pcm);
       const edges = findLineEdges(pcm, r.rate, reqLines.map((l) => lineWeight(l.speak)));
+      const detail = lineVoiceDetail(pcm, r.rate, edges); // real voice onset / voiced runs per line (caption sync)
       for (const [bi, b] of req.blocks.entries()) {
         const from = bi === 0 ? Math.max(0, edges[0] - 0.1) : edges[b.first - f0];
         const to = b.last === f1 ? edges[f1 - f0 + 1] + 0.2 : edges[b.last - f0 + 1];
@@ -131,7 +132,13 @@ export async function buildVoice(script, dir, { signal } = {}) {
         const starts = [];
         for (let i = b.first; i <= b.last; i++) starts.push(i === b.first ? Math.max(0, edges[i - f0] - origin) : edges[i - f0] + 0.07 - origin);
         starts.push(clip.length / r.rate);
-        chunks.push({ file, dur: clip.length / r.rate, rate: r.speed, edges: starts, first: b.first, last: b.last });
+        const cdur = clip.length / r.rate;
+        const marks = [];
+        for (let i = b.first; i <= b.last; i++) {
+          const d = detail[i - f0];
+          marks.push({ on: Math.min(cdur, Math.max(0, d.on - origin)), runs: d.runs.map(([x, y]) => [Math.min(cdur, Math.max(0, x - origin)), Math.min(cdur, Math.max(0, y - origin))]) });
+        }
+        chunks.push({ file, dur: cdur, rate: r.speed, edges: starts, marks, first: b.first, last: b.last });
       }
     } else {
       if (!edgeAllowed()) throw new Error(`Voice generate nahi hui (${lastTtsError() || 'koi voice provider configured nahi'}). Thodi der baad dobara try karo ya Settings mein voice check karo.`);
@@ -158,7 +165,15 @@ export async function buildVoice(script, dir, { signal } = {}) {
     const eff = c.dur / c.rate;
     audio.push({ file: c.file, start: +t.toFixed(3), duration: +eff.toFixed(3), rate: c.rate });
     for (let k = 0; k < c.edges.length - 1; k++) {
-      lines[c.first + k] = { start: +(t + c.edges[k] / c.rate).toFixed(3), end: +(t + c.edges[k + 1] / c.rate).toFixed(3) };
+      const m = c.marks?.[k];
+      if (m) { // caption starts with the voice itself; ends when the next line's voice begins
+        const nextOn = c.marks[k + 1] ? c.marks[k + 1].on : c.edges[k + 1];
+        lines[c.first + k] = {
+          start: +(t + Math.max(0, m.on - CAP_LEAD) / c.rate).toFixed(3),
+          end: +(t + Math.max(m.on, nextOn - CAP_LEAD) / c.rate).toFixed(3),
+          runs: m.runs.map(([x, y]) => [t + x / c.rate, t + y / c.rate]),
+        };
+      } else lines[c.first + k] = { start: +(t + c.edges[k] / c.rate).toFixed(3), end: +(t + c.edges[k + 1] / c.rate).toFixed(3) };
     }
     t += eff;
     const chant = chants.get(c.last);
@@ -172,7 +187,8 @@ export async function buildVoice(script, dir, { signal } = {}) {
   const durationSec = +(t + TAIL - GAP_LINE).toFixed(2);
   for (let i = 0; i < N; i++) {
     if (lines[i + 1] && lines[i].end > lines[i + 1].start) lines[i].end = lines[i + 1].start;
-    lines[i].words = wordTimings(script.lines[i].show, lines[i].start, lines[i].end);
+    lines[i].words = lines[i].runs ? wordTimingsRuns(script.lines[i].show, lines[i].start, lines[i].end, lines[i].runs) : wordTimings(script.lines[i].show, lines[i].start, lines[i].end);
+    delete lines[i].runs;
   }
   // no chant (failed/disabled): show the verse card over the lines that follow the chant point
   for (const s of shloks) {

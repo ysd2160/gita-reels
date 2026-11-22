@@ -15,7 +15,8 @@ import { batchProviders, setVoiceOverrides, speakBatch, lastTtsError } from './s
 import { toWav } from './services/audio.js';
 import { ART_STYLES, buildPrompt, generateImage, imageProvidersAvailable } from './services/images.js';
 import { getSettings, saveSettings } from './services/settings.js';
-import { ensurePlan, importOwnScripts, importWeekPlan, isScriptBusy, newTopicFor, planWeekWithAI, prewriteScripts, runDay, runPlanItem, todayIST } from './services/planner.js';
+import { clearedDays, deleteDayPlan, deleteItem, ensurePlan, importOwnScripts, importWeekPlan, isScriptBusy, newTopicFor, planWeekWithAI, prewriteScripts, resetCleared, restoreDayPlan, retimeUpcoming, runDay, runPlanItem, todayIST } from './services/planner.js';
+import { fixTime, normalizeSlots } from './services/retime.js';
 import { approveReel } from './services/reelActions.js';
 import { integrationStatus, platformStatus, publishReel } from './services/publisher.js';
 import { youtubeAuthUrl, youtubeConfigured, youtubeExchange } from './uploaders/youtube.js';
@@ -54,9 +55,22 @@ export function createApp() {
   }));
   app.get('/api/settings', wrap(async (_req, res) => res.json(await getSettings())));
   app.put('/api/settings', wrap(async (req, res) => {
-    const s = await saveSettings(req.body || {});
+    const body = { ...(req.body || {}) };
+    // publish times must be real HH:MM times (a typo like "7pm" would break the schedule)
+    if (body.shortSlots !== undefined) {
+      body.shortSlots = normalizeSlots(body.shortSlots);
+      if (!body.shortSlots) return res.status(400).json({ error: 'Reels ka publish time galat hai. Aise likho: 07:30, 13:00, 20:30' });
+    }
+    if (body.longSlot !== undefined) {
+      body.longSlot = fixTime(body.longSlot);
+      if (!body.longSlot) return res.status(400).json({ error: 'Long video ka time galat hai. Aise likho: 18:00' });
+    }
+    const before = await getSettings();
+    const s = await saveSettings(body);
     setVoiceOverrides(s);
-    res.json(s);
+    // new publish times also move the plan that already exists and the videos that are made but not uploaded yet
+    const changed = JSON.stringify(before.shortSlots) !== JSON.stringify(s.shortSlots) || before.longSlot !== s.longSlot;
+    res.json({ ...s, retimed: changed ? await retimeUpcoming() : null });
   }));
   app.get('/api/verses', (_req, res) => res.json(VERSES.map(({ id, ref, themes }) => ({ id, ref, themes }))));
   app.get('/api/formats', (_req, res) => res.json(FORMATS.map(({ id, label, shlok, desc }) => ({ id, label, shlok, desc }))));
@@ -211,7 +225,7 @@ export function createApp() {
       .select('status format progress pausedStage videoFile publish scheduledFor purgedAt error');
     const [st, integ] = await Promise.all([getSettings(), integrationStatus()]);
     const byId = Object.fromEntries(reels.map((r) => [String(r._id), { ...r.toObject(), platforms: platformStatus(r, st, integ) }]));
-    res.json({ today: todayIST(), queue: queueState(), items: items.map((i) => ({ ...i.toObject(), scriptBusy: isScriptBusy(i._id), reel: byId[String(i.reelId)] || null })) });
+    res.json({ today: todayIST(), cleared: await clearedDays(), queue: queueState(), items: items.map((i) => ({ ...i.toObject(), scriptBusy: isScriptBusy(i._id), reel: byId[String(i.reelId)] || null })) });
   }));
   app.put('/api/plan/:id', wrap(async (req, res) => {
     const patch = {};
@@ -233,7 +247,7 @@ export function createApp() {
     if (item.kind === 'long') {
       const recent = (await Reel.find({ format: 'long' }).sort({ createdAt: -1 }).limit(15).select('script')).map((r) => r.script?.hookText || r.script?.title).filter(Boolean);
       script = await generateLongScript(item.topic, recent, '', (await getSettings()).longMinutes);
-    } else script = await writeShortScript({ topic: item.topic, formatId, targetSec, notes: item.notes, excludePlanId: item._id });
+    } else script = await writeShortScript({ topic: item.topic, formatId, targetSec, notes: item.notes, excludePlanId: item._id, pillar: item.pillar });
     res.json(await Plan.findByIdAndUpdate(item._id, { script, ...(script.formatId ? { formatId: script.formatId } : {}) }, { new: true }));
   }));
   app.post('/api/plan/:id/script-from-text', wrap(async (req, res) => {
@@ -271,6 +285,17 @@ export function createApp() {
     res.json({ month, today: todayIST(), days });
   }));
 
+  // delete one day's plan (only items not started yet) / bring it back
+  const okDate = (d) => /^\d{4}-\d{2}-\d{2}$/.test(String(d));
+  app.delete('/api/plan/day/:date', wrap(async (req, res) => {
+    if (!okDate(req.params.date)) return res.status(400).json({ error: 'date galat hai' });
+    res.json(await deleteDayPlan(req.params.date));
+  }));
+  app.delete('/api/plan/:id', wrap(async (req, res) => res.json(await deleteItem(req.params.id))));
+  app.post('/api/plan/day/:date/restore', wrap(async (req, res) => {
+    if (!okDate(req.params.date)) return res.status(400).json({ error: 'date galat hai' });
+    res.json({ created: await restoreDayPlan(req.params.date) });
+  }));
   app.post('/api/plan/day/:date/run', wrap(async (req, res) => res.json({ started: await runDay(req.params.date) })));
   app.post('/api/plan/:id/suggest', wrap(async (req, res) => {
     const item = await Plan.findById(req.params.id);
@@ -284,6 +309,7 @@ export function createApp() {
   app.post('/api/plan/run-today', wrap(async (_req, res) => res.json({ started: await runDay(todayIST()) })));
   app.post('/api/plan/reset', wrap(async (_req, res) => {
     await Plan.deleteMany({ date: { $gte: todayIST() }, status: 'planned' });
+    await resetCleared();
     res.json({ created: await ensurePlan() });
   }));
   // AI plans the whole week (mixed formats) and writes all the scripts in the background. Optional brief = "is hafte karma aur anger par".
