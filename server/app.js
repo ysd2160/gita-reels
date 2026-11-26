@@ -1,5 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import fsSync from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import express from 'express';
 import cors from 'cors';
 import { config } from './config.js';
@@ -30,14 +32,29 @@ const isLocal = (req) => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.s
 export function createApp() {
   const app = express();
   app.use(cors());
+  // ---- PUBLIC pages (no login): home / privacy / terms. Needed for Google OAuth verification (home page must be public).
+  const siteDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'site');
+  const gsv = process.env.GOOGLE_SITE_VERIFICATION || '';
+  const sitePage = (file) => (_req, res) => {
+    let html = fsSync.readFileSync(path.join(siteDir, file), 'utf8');
+    html = gsv ? html.replaceAll('%%GSV%%', gsv) : html.replace(/<meta name="google-site-verification"[^>]*>\s*/g, '');
+    res.type('html').send(html);
+  };
+  const authOn = !!(config.auth.user && config.auth.pass);
+  const want = authOn ? 'Basic ' + Buffer.from(`${config.auth.user}:${config.auth.pass}`).toString('base64') : '';
+  const loggedIn = (req) => !authOn || isLocal(req) || req.headers.authorization === want;
+  app.get('/', (req, res, next) => (loggedIn(req) ? next() : sitePage('index.html')(req, res)));
+  app.get(['/privacy', '/privacy-policy'], sitePage('privacy.html'));
+  app.get(['/terms', '/terms-of-service'], sitePage('terms.html'));
+  app.get('/robots.txt', (_req, res) => res.type('text').send('User-agent: *\nAllow: /\nAllow: /privacy\nAllow: /terms\nDisallow: /api/\n'));
   // dashboard password (set DASHBOARD_USER + DASHBOARD_PASS). The local renderer (no x-forwarded-for) is let through.
-  if (config.auth.user && config.auth.pass) {
-    const want = 'Basic ' + Buffer.from(`${config.auth.user}:${config.auth.pass}`).toString('base64');
+  if (authOn) {
     app.use((req, res, next) => {
-      if (isLocal(req) || req.headers.authorization === want) return next();
+      if (loggedIn(req)) return next();
       res.set('WWW-Authenticate', 'Basic realm="Reels Studio"').status(401).send('Login required');
     });
   }
+  app.get('/app', (_req, res) => res.redirect('/')); // "Team login" button: asks for password, then opens the dashboard
   app.get('/healthz', (_req, res) => res.send('ok'));
   app.use(express.json({ limit: '30mb' })); // plan PDFs arrive as base64
   app.use('/media', express.static(config.paths.storage));
