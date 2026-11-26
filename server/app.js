@@ -20,6 +20,7 @@ import { fixTime, normalizeSlots } from './services/retime.js';
 import { approveReel } from './services/reelActions.js';
 import { integrationStatus, platformStatus, publishReel } from './services/publisher.js';
 import { youtubeAuthUrl, youtubeConfigured, youtubeExchange } from './uploaders/youtube.js';
+import { flowPrompts } from './services/flowprompts.js';
 
 const rel = (project) => JSON.parse(JSON.stringify(project).split(config.baseUrl).join('')); // browser uses same-origin URLs
 const abs = (project) => JSON.parse(JSON.stringify(project).replace(/"(\/(?:media|assets)\/)/g, `"${config.baseUrl}$1`));
@@ -184,6 +185,11 @@ export function createApp() {
     const name = `upload_${Date.now()}.${ext}`;
     await fs.writeFile(path.join(dir, name), req.body);
     res.json({ url: `/media/gen/${req.params.id}/${name}`, kind: ['mp4', 'mov', 'webm'].includes(ext) ? 'video' : ['mp3', 'wav', 'm4a'].includes(ext) ? 'audio' : 'image' });
+  }));
+  app.post('/api/reels/:id/flow-prompts', wrap(async (req, res) => { // Google Flow prompts (8 s clips), one per scene of the saved project
+    const reel = await Reel.findById(req.params.id).select('project topic');
+    if (!reel?.project) return res.status(410).json({ error: 'project nahi mila (files delete ho chuki hain)' });
+    res.json({ prompts: await flowPrompts(rel(reel.project), { topic: reel.topic }) });
   }));
   app.post('/api/reels/:id/scene-image', wrap(async (req, res) => {
     const art = ART_STYLES.find((a) => a.id === req.body.artStyle) || ART_STYLES[0];
