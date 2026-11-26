@@ -70,6 +70,7 @@ function App() {
   const tlScroll = useRef<HTMLDivElement>(null);
   const tlIn = useRef<HTMLDivElement>(null);
   const fileIn = useRef<HTMLInputElement>(null);
+  const fileAll = useRef<HTMLInputElement>(null); // header button: Flow clips from scene 1
   const first = useRef(true);
   const act = useRef<{ toggle: () => void; split: () => void; step: (d: number) => void; seekFrame: (f: number) => void } | null>(null);
 
@@ -281,6 +282,9 @@ function App() {
         <a className="btn sm" href="/">← Dashboard</a>
         <b>{meta.topic}</b><span className="mut">{isLong ? 'Long video' : 'Short'} · {fmtMs(p.durationSec)} · {p.scenes.length} scenes</span>
         <div className="grow" /><span className="mut">{busy || saved}</span>
+        <button className="btn" disabled={!!busy} onClick={() => fileAll.current?.click()} title="Flow ke videos select karo: file 1 -> scene 1, file 2 -> scene 2 ... (naam 01, 02, 03 rakho)">⬆ Flow videos</button>
+        <input ref={fileAll} type="file" multiple accept="video/mp4,video/webm,video/quicktime,image/*" style={{ display: 'none' }}
+          onChange={(e) => { importMany(Array.from(e.target.files || []), 0); e.target.value = ''; }} />
         <button className="btn primary" disabled={!!busy} onClick={render}>Render video</button>
       </header>
 

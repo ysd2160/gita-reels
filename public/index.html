@@ -59,7 +59,7 @@ textarea{resize:vertical}
 .bar{height:6px;background:var(--s3);border-radius:99px;overflow:hidden}.bar i{display:block;height:100%;background:var(--gold);transition:width .5s}
 .va{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:auto}
 .more{position:relative}.more summary{list-style:none;cursor:pointer}.more summary::-webkit-details-marker{display:none}
-.menu{position:absolute;right:0;bottom:calc(100% + 6px);background:var(--s2);border:1px solid var(--line);border-radius:12px;padding:6px;min-width:200px;z-index:20;box-shadow:0 12px 30px rgba(0,0,0,.5);display:flex;flex-direction:column}
+.menu{position:absolute;right:-100;bottom:calc(100% + 6px);background:var(--s2);border:1px solid var(--line);border-radius:12px;padding:6px;min-width:200px;z-index:20;box-shadow:0 12px 30px rgba(0,0,0,.5);display:flex;flex-direction:column}
 .menu button,.menu a{text-align:left;background:none;border:0;padding:8px 10px;border-radius:8px;cursor:pointer;color:var(--text);text-decoration:none;font-size:13.5px}.menu button:hover,.menu a:hover{background:var(--s3)}
 .err{color:var(--red);font-size:12.5px}
 /* grid */
@@ -106,7 +106,7 @@ pre.tpl{background:var(--bg);border:1px solid var(--line);border-radius:10px;pad
 #toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);display:flex;flex-direction:column;gap:8px;z-index:99;align-items:center}
 .ts{background:var(--s3);border:1px solid var(--line);padding:10px 16px;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
 .empty{text-align:center;color:var(--mute);padding:60px 0;border:1px dashed var(--line);border-radius:16px}
-@media(max-width:1100px){.app,.app.ai-on{grid-template-columns:0 minmax(0,1fr) 0}.nav{position:fixed;bottom:0;left:0;right:0;height:62px;flex-direction:row;justify-content:space-around;padding:0;z-index:40;border-top:1px solid var(--line);border-right:0}.logo,.dotst{display:none}.nb{width:auto;flex:1;padding:8px 0}.nb.ai{margin:0}.app.ai-on .dock{position:fixed;right:0;top:0;bottom:62px;width:min(420px,100%);z-index:45}.wrap{padding:20px 16px 90px}.vc{grid-template-columns:96px 1fr}.ph{width:96px}.pr{grid-template-columns:1fr 1fr}.form{grid-template-columns:1fr}}
+@media(max-width:1100px){.app,.app.ai-on{grid-template-columns:minmax(0,1fr)}.app .dock{display:none}.app.ai-on .dock{display:flex}.nav{position:fixed;bottom:0;left:0;right:0;height:62px;flex-direction:row;justify-content:space-around;padding:0;z-index:40;border-top:1px solid var(--line);border-right:0}.logo,.dotst{display:none}.nb{width:auto;flex:1;padding:8px 0}.nb.ai{margin:0}.app.ai-on .dock{position:fixed;right:0;top:0;bottom:62px;width:min(420px,100%);z-index:45}.wrap{padding:20px 16px 90px}.vc{grid-template-columns:96px 1fr}.ph{width:96px}.pr{grid-template-columns:1fr 1fr}.form{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -222,6 +222,13 @@ function patch(host,items,key,html){
 /* ---- nav ---- */
 function go(v){view=v;['today','videos','plan','uploads','settings'].forEach(k=>$('v-'+k).style.display=k===v?'':'none');document.querySelectorAll('.nb[data-v]').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
   ({today:loadToday,videos:loadVideos,plan:loadPlan,uploads:loadUploads,settings:loadSettings})[v]()}
+function editBtn(r,cls,label){if(!r)return'';
+  if(r.editable)return`<a class="${cls}" href="/editor.html?id=${r._id}">${label}</a>`;
+  return`<button class="${cls}" onclick="editRebuild('${r._id}')" title="Edit files delete ho chuki hain - naya look banake edit khulega">${label}</button>`}
+async function editRebuild(id){const r=reels.find(x=>x._id===id);
+  if(!r||!r.script)return toast('Is video ka script nahi hai, edit nahi ho sakta');
+  if(!confirm('Is video ki edit files (voice/images) delete ho chuki hain.\n\nNaya look banaun? (script wahi rahega) Ban jaane ke baad Edit dobara dabao, phir Flow clips daal sakte ho.'))return;
+  await act(id,'regenerate','?mode=render')}
 function toggleAI(force){const on=force??!$('app').classList.contains('ai-on');$('app').classList.toggle('ai-on',on);$('aiBtn').classList.toggle('on',on);localStorage.setItem('aiOn',on?'1':'');if(on)setTimeout(()=>$('dIn').focus(),250)}
 const dayLabel=d=>new Date(d+'T00:00:00').toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'short'});
 const estSec=s=>Math.round((s.lines||[]).reduce((n,l)=>n+clean(l.show).split(/\s+/).filter(Boolean).length,0)/2.4+2);
@@ -246,9 +253,9 @@ function vcard(i){
   const est=s&&!long?estSec(s):0;
   const primary={script:`<button class="btn ai" onclick="openStudio('${i._id}',true)">✨ AI se script likho</button>`,
     make:`<button class="btn gold" onclick="runItem('${i._id}')">Video banao</button><button class="btn ai" onclick="openStudio('${i._id}')">✨ Script sudharo</button>`,
-    review:`<button class="btn green" onclick="act('${r&&r._id}','approve')">✓ Approve</button>${r&&r.editable?`<a class="btn" href="/editor.html?id=${r._id}">Edit video</a>`:''}<button class="btn ai" onclick="aiAbout('${r&&r._id}','reel')">✨ AI feedback</button>`,
+    review:`<button class="btn green" onclick="act('${r&&r._id}','approve')">✓ Approve</button>${editBtn(r,'btn','✂ Edit video')}<button class="btn ai" onclick="aiAbout('${r&&r._id}','reel')">✨ AI feedback</button>`,
     uploaderr:`<button class="btn gold" onclick="retryUp('${rid}',this)">Dobara upload karo</button>`,
-    sched:`${r&&r.editable?`<a class="btn" href="/editor.html?id=${r._id}">Edit video</a>`:''}<button class="btn" onclick="pubNow('${r&&r._id}',this)">Abhi post karo</button>`,
+    sched:`${editBtn(r,'btn','✂ Edit video')}<button class="btn" onclick="pubNow('${r&&r._id}',this)">Abhi post karo</button>`,
     done:['youtube','instagram'].filter(p=>r.publish&&r.publish[p]&&r.publish[p].url).map(p=>`<a class="btn" target="_blank" href="${esc(r.publish[p].url)}">${p==='youtube'?'YouTube':'Instagram'} ↗</a>`).join(''),
     failed:`<button class="btn gold" onclick="act('${r&&r._id}','regenerate','?mode=script')">Dobara try</button>`,busy:`<button class="btn" onclick="pauseVid('${rid}')">⏸ Roko</button>${r&&r.status==='queued'&&pos>0?`<button class="btn" onclick="resumeVid('${rid}',1)">▶ Abhi shuru</button>`:''}`,
     paused:`<button class="btn gold" onclick="resumeVid('${rid}')">▶ Resume</button>${(plan.queue||{}).running?`<button class="btn" onclick="resumeVid('${rid}',1)">▶ Abhi chalao</button>`:''}`,skip:`<button class="btn" onclick="planEdit('${i._id}',{status:'planned'})">Undo skip</button>`}[st];
@@ -309,7 +316,7 @@ async function loadVideos(){const d=await api('/reels');if(d.error)return;reels=
     const m=paused?`<div class="ring" style="text-align:center;color:var(--mute)"><div class="num" style="font-size:26px;font-weight:700;color:var(--gold)">${r.progress||0}%</div>⏸ roka hua</div>`:busy?`<div class="ring" style="text-align:center;color:var(--mute)"><div class="num" style="font-size:26px;font-weight:700;color:var(--gold)">${r.progress||0}%</div>${esc(STEP[r.status]||'')}</div>`:r.videoFile?`<video controls playsinline preload="metadata" src="/media/videos/${r.videoFile}?v=${new Date(r.updatedAt).getTime()}"></video>`:`<div class="help" style="padding:16px;text-align:center">${r.purgedAt?'Files auto-clean ho gayi':'—'}</div>`;
     const chip={published:'chip g',approved:'chip g',ready:'chip y',failed:'chip r',rejected:'chip r'}[r.status]||'chip';
     return `<div class="gc"><div class="m">${m}</div><div class="b"><div style="display:flex;gap:6px;flex-wrap:wrap"><span class="${chip}">${esc(r.status.replace('_',' '))}</span>${platChips(r)}</div><div class="t">${esc((r.script&&clean(r.script.hookText))||r.topic)}</div><div class="help">${esc(r.topic)}</div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap">${busy?`<button class="btn sm" onclick="pauseVid('${r._id}')">⏸ Roko</button>`:''}${paused?`<button class="btn sm gold" onclick="resumeVid('${r._id}')">▶ Resume</button>`:''}${r.status==='ready'||r.status==='rejected'?`<button class="btn sm green" onclick="act('${r._id}','approve')">✓ Approve</button>`:''}${r.editable&&!busy?`<a class="btn sm" href="/editor.html?id=${r._id}">Edit</a>`:''}${r.script&&!busy&&!paused?`<button class="btn sm ai" onclick="aiAbout('${r._id}','reel')">✨ AI</button>`:''}
+      <div style="display:flex;gap:6px;flex-wrap:wrap">${busy?`<button class="btn sm" onclick="pauseVid('${r._id}')">⏸ Roko</button>`:''}${paused?`<button class="btn sm gold" onclick="resumeVid('${r._id}')">▶ Resume</button>`:''}${r.status==='ready'||r.status==='rejected'?`<button class="btn sm green" onclick="act('${r._id}','approve')">✓ Approve</button>`:''}${!busy&&!paused?editBtn(r,'btn sm gold','✂ Edit / Flow clips'):''}${r.script&&!busy&&!paused?`<button class="btn sm ai" onclick="aiAbout('${r._id}','reel')">✨ AI</button>`:''}
       <details class="more"><summary class="btn sm">⋯</summary><div class="menu">${r.script&&!busy?`<button onclick="openReelScript('${r._id}')">Script edit</button>`:''}${r.videoFile&&!busy?`<a href="/media/videos/${r.videoFile}" download>Download</a><button onclick="act('${r._id}','regenerate','?mode=render')">Naya look</button><button onclick="act('${r._id}','regenerate','?mode=script')">Naya script</button>`:''}${r.script?`<button onclick="copyCap('${r._id}')">Caption copy</button>`:''}${['ready','approved'].includes(r.status)?`<button onclick="pubNow('${r._id}',this)">Abhi post karo</button>`:''}<button class="red" onclick="sure(this,async()=>{await api('/reels/${r._id}',{method:'DELETE'});loadVideos()})">Delete</button></div></details></div></div></div>`});
 }
 async function newReel(){const t=$('newTopic').value.trim();if(!t)return;await post('/reels',{topic:t});$('newTopic').value='';toast('Video line mein lag gayi');loadVideos()}
