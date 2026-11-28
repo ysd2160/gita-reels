@@ -37,12 +37,12 @@ const SACRED = [
 export function pickStyle(prev, format = 'short') {
   const art = pick(ART_STYLES.filter((a) => a.id !== prev?.artStyle));
   return {
-    variant: format === 'short' ? pick(FORMAT_VARIANTS.filter((v) => v !== prev?.variant)) : 'classic', // video format: a different layout each time
+    variant: format === 'short' ? 'frame' : 'classic', // ONE fixed look for every short: hook on top, the picture in a framed box in the middle, caption below
     artStyle: art.id,
     templateId: art.template,
-    captionStyle: pick(['pop', 'box', 'glow'].filter((t) => t !== prev?.captionStyle)),
+    captionStyle: format === 'short' ? 'pop' : pick(['pop', 'box', 'glow'].filter((t) => t !== prev?.captionStyle)), // white words, the key word in the accent colour
     shlokStyle: pick(['card', 'minimal', 'band']),
-    hookStyle: pick(['big', 'band']),
+    hookStyle: format === 'short' ? 'band' : pick(['big', 'band']), // 'band' = the hook in a coloured box
     transition: pick(['fade', 'zoom', 'slide', 'flash'].filter((t) => t !== prev?.transition)),
   };
 }
@@ -145,7 +145,6 @@ export async function prepareReel(id, { signal } = {}) {
   const format = reel.format || 'short';
   const log = (m) => console.log(`[${format} ${String(id).slice(-6)}] ${m}`);
   const work = reel.work || {};
-  if (!reel.work) await Reel.updateOne({ _id: id, work: null }, { $set: { work: {} } }); // work can be null (after retry/regenerate) -> "work.voice" $set would fail (Mongo code 28)
   try {
     stopIf(signal);
     await set(reel, { status: reel.script ? 'voice' : 'scripting', progress: Math.max(reel.progress || 0, 3), error: null, project: null, pausedStage: null });
@@ -197,7 +196,7 @@ export async function prepareReel(id, { signal } = {}) {
     if (resumedScenes) log(`visuals: ${resumedScenes}/${scenes.length} scenes pehle se ready (resume)`);
     let chain = Promise.resolve();
     const persist = () => {
-      chain = chain.then(() => Reel.updateOne({ _id: id }, { $set: { 'work.scenes': scenes, progress: 38 + Math.round((24 * scenes.filter((s) => s.type).length) / Math.max(1, scenes.length)) } })).catch((e) => console.warn(`[${format} ${String(id).slice(-6)}] scene save fail: ${e.message}`));
+      chain = chain.then(() => Reel.updateOne({ _id: id }, { $set: { 'work.scenes': scenes, progress: 38 + Math.round((24 * scenes.filter((s) => s.type).length) / Math.max(1, scenes.length)) } })).catch(() => {});
     };
     await attachVisuals(scenes, script, style, id, usedIds, voice.shloks, { signal, persist });
     await chain;

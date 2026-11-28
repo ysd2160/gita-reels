@@ -20,7 +20,7 @@ export async function purgeReelFiles(reel) {
 /**
  * Storage keeper (runs every few minutes):
  *  - published / rejected / failed reels: all files are deleted KEEP_HOURS (24h) after generation
- *  - approved / ready but still NOT posted: kept longer (KEEP_MAX_HOURS, 72h) so a video is never lost before it goes out
+ *  - approved / ready but still NOT posted: kept for KEEP_UNPOSTED_DAYS (30 days) so you can still EDIT it (voice, images and project stay). Before: 72 h, then the editor said "edit files delete ho chuki hain"
  *  - leftovers of deleted reels (orphan folders) older than that are removed too
  */
 export async function purgeExpired({ orphans: sweepOrphans = false } = {}) {
@@ -28,7 +28,7 @@ export async function purgeExpired({ orphans: sweepOrphans = false } = {}) {
   const hours = Number(st.keepHours) > 0 ? Number(st.keepHours) : config.retention.hours;
   const maxHours = Math.max(config.retention.maxHours, hours);
   const done = new Date(Date.now() - hours * 3600e3);
-  const stale = new Date(Date.now() - maxHours * 3600e3);
+  const stale = new Date(Date.now() - Math.max(maxHours, config.retention.unpostedDays * 24) * 3600e3); // unposted videos: long safety limit only
   const older = (d) => ({ $or: [{ genAt: { $lt: d } }, { genAt: null, createdAt: { $lt: d } }] });
 
   const list = await Reel.find({

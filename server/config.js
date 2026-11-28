@@ -97,7 +97,7 @@ export const config = {
   // 'approve' / 'render' = old behaviour (temp files deleted right at approve / render)
   cleanup: env.CLEAN_MODE || 'retention',
   draftDays: num(env.KEEP_DRAFT_DAYS, 3),
-  retention: { hours: num(env.KEEP_HOURS, 24), maxHours: num(env.KEEP_MAX_HOURS, 72) },
+  retention: { hours: num(env.KEEP_HOURS, 24), maxHours: num(env.KEEP_MAX_HOURS, 72), unpostedDays: num(env.KEEP_UNPOSTED_DAYS, 30) }, // a video that is NOT posted yet keeps its edit files for unpostedDays
   cron: { enabled: env.ENABLE_CRON === 'true', expr: env.CRON_GENERATE || '0 2 * * *', perDay: num(env.REELS_PER_DAY, 2) },
   windows: env.POST_WINDOWS || '06:30-08:00,21:00-22:30',
 

@@ -9,7 +9,8 @@ import { TEMPLATES, Palette } from './templates';
 export type Word = { text: string; emph: boolean; start: number; end: number };
 export type Line = { start: number; end: number; words: Word[] };
 export type AudioSeg = { url: string; start: number; duration: number; rate: number };
-export type Scene = { type: 'video' | 'image' | 'none'; url: string; start: number; end: number; trim: number; motion: 'in' | 'out' | 'left' | 'right' | 'up' };
+// zoom / x / y = the editor's manual framing of the picture (zoom 1 = normal, x / y in pixels of the video); motion 'none' = no camera move
+export type Scene = { type: 'video' | 'image' | 'none'; url: string; start: number; end: number; trim: number; motion: 'in' | 'out' | 'left' | 'right' | 'up' | 'none'; zoom?: number; x?: number; y?: number };
 export type Shlok = { sanskrit: string; reference: string; from: number; to: number };
 export type Chapter = { at: number; title: string };
 export type StyleProps = {
@@ -87,26 +88,30 @@ const SceneLayer: React.FC<{ scene: Scene; transition: StyleProps['transition'];
   const isImg = scene.type === 'image';
 
   // A still image gets a real "camera": a base zoom that hides every edge, a strong push / pull, a pan, a tiny handheld wobble, a punch on the cut and light breathing.
-  const base = isImg ? (isLong ? 1.06 : 1.1) : 1.04;
-  const kb = isImg ? (isLong ? 0.1 : 0.17) : 0.07;
-  const pan = isImg ? (isLong ? 20 : 34) : 18;
   const dir = scene.motion;
+  const still = dir === 'none'; // no push / pan / wobble: the picture stays exactly where the editor put it
+  const base = isImg ? (isLong ? 1.06 : 1.1) : 1.04;
+  const kb = still ? 0 : isImg ? (isLong ? 0.1 : 0.17) : 0.07;
+  const pan = still ? 0 : isImg ? (isLong ? 20 : 34) : 18;
   let scale = base + (dir === 'out' ? kb * (1 - e) : kb * e);
   let tx = 0;
   let ty = 0;
   if (dir === 'left') tx = (1 - 2 * e) * pan;
   if (dir === 'right') tx = (2 * e - 1) * pan;
   if (dir === 'up') ty = (1 - 2 * e) * pan;
-  if (isImg) {
+  if (isImg && !still) {
     const ph = idx * 1.7;
     tx += Math.sin(frame / 7 + ph) * 2.2;
     ty += Math.cos(frame / 8.3 + ph) * 2.2;
   }
-  const rot = isImg ? Math.sin(frame / 23 + idx) * 0.35 : 0;
+  const rot = isImg && !still ? Math.sin(frame / 23 + idx) * 0.35 : 0;
   const punch = isFirst ? 0 : interpolate(frame, [0, 8], [0.06, 0], { extrapolateRight: 'clamp', easing: Easing.out(Easing.cubic) });
   scale += punch;
   if (transition === 'zoom') scale *= 1 + (1 - ease) * 0.22;
   if (transition === 'slide') tx += (1 - ease) * 110;
+  scale *= scene.zoom && scene.zoom > 0 ? scene.zoom : 1; // manual framing from the editor
+  tx += scene.x || 0;
+  ty += scene.y || 0;
 
   const style: React.CSSProperties = {
     width: '100%', height: '100%', objectFit: 'cover',

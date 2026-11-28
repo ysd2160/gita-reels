@@ -13,8 +13,8 @@ const api = (p: string, o: RequestInit = {}) => fetch('/api' + p, { headers: { '
 type EScene = Scene & { prompt?: string; flow?: string };
 type Project = Omit<ReelProps, 'scenes'> & { scenes: EScene[] };
 type Tab = 'scene' | 'elements' | 'captions' | 'style' | 'audio';
-const MOTIONS = ['in', 'out', 'left', 'right', 'up'] as const;
-const CAMERA: Record<Scene['motion'], string> = { in: 'slow push-in', out: 'slow pull-back', left: 'smooth pan to the left', right: 'smooth pan to the right', up: 'slow tilt up' };
+const MOTIONS = ['in', 'out', 'left', 'right', 'up', 'none'] as const; // 'none' = locked-off picture, no camera move
+const CAMERA: Record<Scene['motion'], string> = { in: 'slow push-in', out: 'slow pull-back', left: 'smooth pan to the left', right: 'smooth pan to the right', up: 'slow tilt up', none: 'static locked-off shot' };
 const TABS: { k: Tab; label: string }[] = [{ k: 'scene', label: 'SCENE' }, { k: 'elements', label: 'TEXT' }, { k: 'captions', label: 'CAPS' }, { k: 'style', label: 'STYLE' }, { k: 'audio', label: 'AUDIO' }];
 
 const p2 = (n: number) => String(n).padStart(2, '0');
@@ -64,6 +64,8 @@ function App() {
   const [toast, setToast] = useState('');
   const [drop, setDrop] = useState(false);
   const [mb, setMb] = useState({ w: 0, h: 0 }); // size of the monitor area
+  const [, setHv] = useState(0); // re-render when the undo history changes
+  const hist = useRef<{ past: string[]; future: string[]; cur: string; last: number; skip: boolean }>({ past: [], future: [], cur: '', last: 0, skip: false });
   const player = useRef<PlayerRef>(null);
   const stage = useRef<HTMLDivElement>(null);
   const monBody = useRef<HTMLDivElement>(null);
@@ -72,7 +74,7 @@ function App() {
   const fileIn = useRef<HTMLInputElement>(null);
   const fileAll = useRef<HTMLInputElement>(null); // header button: Flow clips from scene 1
   const first = useRef(true);
-  const act = useRef<{ toggle: () => void; split: () => void; step: (d: number) => void; seekFrame: (f: number) => void } | null>(null);
+  const act = useRef<{ toggle: () => void; split: () => void; step: (d: number) => void; seekFrame: (f: number) => void; undo: () => void; redo: () => void; save: () => void; del: () => void } | null>(null);
 
   useEffect(() => {
     api(`/reels/${id}/project`).then((r) => {
@@ -90,6 +92,18 @@ function App() {
     return () => clearTimeout(t);
   }, [p]);
 
+  // undo / redo history: every change of the project is remembered (quick changes like a slider drag or typing count as ONE step)
+  useEffect(() => {
+    if (!p) return;
+    const h = hist.current, snap = JSON.stringify(p);
+    if (h.skip) { h.skip = false; h.cur = snap; return; }
+    if (!h.cur) { h.cur = snap; return; }
+    if (snap === h.cur) return;
+    if (Date.now() - h.last > 700) { h.past.push(h.cur); if (h.past.length > 80) h.past.shift(); }
+    h.last = Date.now(); h.cur = snap; h.future = [];
+    setHv((v) => v + 1);
+  }, [p]);
+
   // player events + monitor size
   useEffect(() => {
     const pl = player.current; if (!pl) return;
@@ -102,15 +116,23 @@ function App() {
     return () => { pl.removeEventListener('frameupdate', fu as never); pl.removeEventListener('play', pa); pl.removeEventListener('pause', pz); pl.removeEventListener('ended', pz); ro.disconnect(); };
   }, [p === null]);
 
-  // keyboard: Space play/pause, S split, arrows step (Shift = 1 s), Home = start
+  // keyboard: Space play/pause, S split, arrows step (Shift = 1 s), Home = start, Delete = remove scene, Ctrl+Z undo, Ctrl+Y / Ctrl+Shift+Z redo, Ctrl+S save
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
       const el = e.target as HTMLElement;
-      if (/INPUT|TEXTAREA|SELECT/.test(el.tagName) || el.isContentEditable) return;
+      const typing = /INPUT|TEXTAREA|SELECT/.test(el.tagName) || el.isContentEditable;
       const a = act.current; if (!a) return;
+      if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+        const k = e.key.toLowerCase();
+        if (k === 's') { e.preventDefault(); a.save(); }
+        else if (!typing && k === 'z') { e.preventDefault(); if (e.shiftKey) a.redo(); else a.undo(); }
+        else if (!typing && k === 'y') { e.preventDefault(); a.redo(); }
+        return;
+      }
+      if (e.altKey || typing) return;
       if (e.code === 'Space') { e.preventDefault(); a.toggle(); }
       else if (e.key === 's' || e.key === 'S') a.split();
+      else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); a.del(); }
       else if (e.key === 'ArrowLeft') { e.preventDefault(); a.step(e.shiftKey ? -FPS : -1); }
       else if (e.key === 'ArrowRight') { e.preventDefault(); a.step(e.shiftKey ? FPS : 1); }
       else if (e.key === 'Home') a.seekFrame(0);
@@ -221,6 +243,25 @@ function App() {
   };
   const mergeNext = () => { if (si >= p.scenes.length - 1) return; const a = p.scenes[si], b = p.scenes[si + 1]; up({ scenes: [...p.scenes.slice(0, si), { ...a, end: b.end }, ...p.scenes.slice(si + 2)] }); };
 
+  // ---- undo / redo / save / delete / swap
+  const undo = () => { const h = hist.current; const prev = h.past.pop(); if (!prev) return toastMsg('Undo ke liye kuch nahi'); h.future.push(h.cur); h.cur = prev; h.skip = true; h.last = 0; setP(JSON.parse(prev)); setHv((v) => v + 1); toastMsg('Undo'); };
+  const redo = () => { const h = hist.current; const nxt = h.future.pop(); if (!nxt) return toastMsg('Redo ke liye kuch nahi'); h.past.push(h.cur); h.cur = nxt; h.skip = true; h.last = 0; setP(JSON.parse(nxt)); setHv((v) => v + 1); toastMsg('Redo'); };
+  const saveNow = async () => { setSaved('Saving...'); const r = await api(`/reels/${id}/project`, { method: 'PUT', body: JSON.stringify({ project: p }) }); setSaved(r.error ? 'Save failed' : 'Saved'); toastMsg(r.error ? 'Save nahi hua' : 'Saved'); };
+  // delete the selected scene: the neighbour takes over its time, so the video length and the voice stay exactly the same
+  const deleteScene = () => {
+    if (p.scenes.length <= 1) return toastMsg('Kam se kam ek scene rehna chahiye');
+    const i = si, s0 = p.scenes[i];
+    const scenes = p.scenes.map((x, k) => (i + 1 < p.scenes.length ? (k === i + 1 ? { ...x, start: s0.start } : x) : (k === i - 1 ? { ...x, end: s0.end } : x))).filter((_, k) => k !== i);
+    up({ scenes }); setSel(Math.max(0, Math.min(i, scenes.length - 1))); toastMsg(`Scene ${i + 1} delete (Ctrl+Z se wapas)`);
+  };
+  // swap the PICTURES of two neighbouring scenes (the cut times stay)
+  const swapScene = (j: number) => {
+    if (j < 0 || j >= p.scenes.length) return;
+    const pick = (x: EScene) => ({ type: x.type, url: x.url, trim: x.trim, prompt: x.prompt, flow: x.flow, zoom: x.zoom, x: x.x, y: x.y });
+    const a = pick(p.scenes[si]), b = pick(p.scenes[j]);
+    up({ scenes: p.scenes.map((x, k) => (k === si ? { ...x, ...b } : k === j ? { ...x, ...a } : x)) }); setSel(j); toastMsg(`Scene ${si + 1} aur ${j + 1} ki pictures badal gayi`);
+  };
+
   const render = async () => {
     setBusy('Saving + queueing render...');
     await api(`/reels/${id}/project`, { method: 'PUT', body: JSON.stringify({ project: p }) });
@@ -234,6 +275,7 @@ function App() {
     split: splitScene,
     step: (d) => seek((player.current?.getCurrentFrame() ?? 0) / FPS + d / FPS),
     seekFrame: (f) => player.current?.seekTo(f),
+    undo, redo, save: saveNow, del: deleteScene,
   };
 
   // draggable on-canvas elements
@@ -282,6 +324,9 @@ function App() {
         <a className="btn sm" href="/">← Dashboard</a>
         <b>{meta.topic}</b><span className="mut">{isLong ? 'Long video' : 'Short'} · {fmtMs(p.durationSec)} · {p.scenes.length} scenes</span>
         <div className="grow" /><span className="mut">{busy || saved}</span>
+        <button className="btn sm" onClick={undo} disabled={!hist.current.past.length} title="Undo (Ctrl+Z)">↶ Undo</button>
+        <button className="btn sm" onClick={redo} disabled={!hist.current.future.length} title="Redo (Ctrl+Y)">↷ Redo</button>
+        <button className="btn sm" onClick={saveNow} title="Save now (Ctrl+S). Changes are also saved automatically">💾 Save</button>
         <button className="btn" disabled={!!busy} onClick={() => fileAll.current?.click()} title="Flow ke videos select karo: file 1 -> scene 1, file 2 -> scene 2 ... (naam 01, 02, 03 rakho)">⬆ Flow videos</button>
         <input ref={fileAll} type="file" multiple accept="video/mp4,video/webm,video/quicktime,image/*" style={{ display: 'none' }}
           onChange={(e) => { importMany(Array.from(e.target.files || []), 0); e.target.value = ''; }} />
@@ -388,7 +433,9 @@ function App() {
             </>)}
 
             {tab === 'scene' && scene && (<>
-              <div className="row"><button className="btn sm" onClick={splitScene}>✂ Split at playhead (S)</button><button className="btn sm" onClick={mergeNext} disabled={si >= p.scenes.length - 1}>Merge with next</button></div>
+              <div className="row"><button className="btn sm" onClick={splitScene}>✂ Split at playhead (S)</button><button className="btn sm" onClick={mergeNext} disabled={si >= p.scenes.length - 1}>Merge with next</button><button className="btn sm bad" onClick={deleteScene} disabled={p.scenes.length <= 1} title="Delete (key)">🗑 Delete scene</button></div>
+              <div className="row"><button className="btn sm" onClick={() => swapScene(si - 1)} disabled={si === 0} title="Is scene ki picture pichle scene se badlo">◀ Picture peeche</button><button className="btn sm" onClick={() => swapScene(si + 1)} disabled={si >= p.scenes.length - 1} title="Is scene ki picture agle scene se badlo">Picture aage ▶</button></div>
+              <p className="help">Shortcuts: Space play · S split · ←/→ frame (Shift = 1 s) · Delete scene hatao · Ctrl+Z undo · Ctrl+Y redo · Ctrl+S save</p>
               <h4>Scene {si + 1} / {p.scenes.length} · {fmtMs(scene.start)} – {fmtMs(scene.end)} · {(scene.end - scene.start).toFixed(1)}s</h4>
               <div className="thumb">{scene.type === 'image' ? <img src={scene.url} /> : scene.type === 'video' ? <video src={scene.url} muted controls /> : <div className="none">No visual</div>}</div>
 
@@ -412,6 +459,12 @@ function App() {
               </div>
               {scene.type === 'video' && <Row label="Video start offset (s)"><Num v={scene.trim} on={(n) => upScene(si, { trim: Math.max(0, n) })} /></Row>}
               {si < p.scenes.length - 1 && <Row label="Cut to next scene at (s)"><Num v={scene.end} step={0.1} on={(n) => setBoundary(si, n)} /></Row>}
+              <h4>Framing (is scene ki picture)</h4>
+              <Row label={`Zoom ${(scene.zoom ?? 1).toFixed(2)}x`}><Slider v={scene.zoom ?? 1} on={(n) => upScene(si, { zoom: +n.toFixed(2) })} min={1} max={2.5} step={0.01} /></Row>
+              <Row label={`Left / right ${Math.round(scene.x ?? 0)} px`}><Slider v={scene.x ?? 0} on={(n) => upScene(si, { x: Math.round(n) })} min={-300} max={300} step={1} /></Row>
+              <Row label={`Up / down ${Math.round(scene.y ?? 0)} px`}><Slider v={scene.y ?? 0} on={(n) => upScene(si, { y: Math.round(n) })} min={-300} max={300} step={1} /></Row>
+              <div className="row"><button className="btn sm" onClick={() => upScene(si, { zoom: 1, x: 0, y: 0 })}>Reset framing</button><button className="btn sm" onClick={() => { const z = scene.zoom ?? 1, x = scene.x ?? 0, y = scene.y ?? 0; up({ scenes: p.scenes.map((s) => ({ ...s, zoom: z, x, y })) }); toastMsg('Sab scenes par lag gaya'); }}>Sab scenes par lagao</button></div>
+              <p className="help">Motion "none" = picture hilti nahi (camera move band). Zoom/position se picture ko frame mein apni jagah rakho, jaise Filmora mein crop/scale.</p>
               <button className="btn sm bad" onClick={() => upScene(si, { type: 'none', url: '' })}>Remove visual</button>
             </>)}
 
@@ -455,6 +508,9 @@ function App() {
             <span className="tc mono" style={{ fontSize: 13, minWidth: 96 }}>{fmtTc(t)}</span>
             <button className="btn sm" onClick={splitScene} title="Split scene at playhead (S)">✂ Split</button>
             <button className="btn sm" onClick={mergeNext} disabled={si >= p.scenes.length - 1}>Merge</button>
+            <button className="btn sm bad" onClick={deleteScene} disabled={p.scenes.length <= 1} title="Delete selected scene (Delete key)">🗑 Delete</button>
+            <button className="btn sm" onClick={undo} disabled={!hist.current.past.length} title="Undo (Ctrl+Z)">↶</button>
+            <button className="btn sm" onClick={redo} disabled={!hist.current.future.length} title="Redo (Ctrl+Y)">↷</button>
             <div className="grow" />
             <span className="mut">Zoom</span>
             <input type="range" min={4} max={160} step={1} value={pps} onChange={(e) => setPps(parseInt(e.target.value, 10))} />
