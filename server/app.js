@@ -4,8 +4,12 @@ import fsSync from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 import cors from 'cors';
+import mongoose from 'mongoose';
 import { config } from './config.js';
-import { Plan, Reel, Topic } from './models.js';
+import { Plan, Reel, Setting, Topic, User } from './models.js';
+import { runAs } from './context.js';
+import { hmac, safeEqual } from './crypto.js';
+import { changePassword, clearSessionCookie, dropUserCache, hashPassword, loginUser, publicUser, registerUser, sessionUser, setSessionCookie } from './auth.js';
 import { enqueue, enqueueRender, pauseReel, queueLength, queueState, resumeReel } from './services/queue.js';
 import { keyStats } from './services/keypool.js';
 import { bulkCreate, createReel, refillTopics } from './services/batch.js';
@@ -17,16 +21,21 @@ import { batchProviders, setVoiceOverrides, speakBatch, lastTtsError } from './s
 import { toWav } from './services/audio.js';
 import { ART_STYLES, buildPrompt, generateImage, imageProvidersAvailable } from './services/images.js';
 import { getSettings, saveSettings } from './services/settings.js';
-import { clearedDays, deleteDayPlan, deleteItem, ensurePlan, importOwnScripts, importWeekPlan, isScriptBusy, newTopicFor, planWeekWithAI, prewriteScripts, resetCleared, restoreDayPlan, retimeUpcoming, runDay, runPlanItem, todayIST } from './services/planner.js';
+import { clearedDays, deleteDayPlan, deleteItem, ensurePlan, importOwnScripts, importPacks, importWeekPlan, isScriptBusy, newTopicFor, planWeekWithAI, prewriteScripts, resetCleared, restoreDayPlan, retimeUpcoming, runDay, runPlanItem, todayIST } from './services/planner.js';
 import { fixTime, normalizeSlots } from './services/retime.js';
 import { approveReel } from './services/reelActions.js';
 import { integrationStatus, platformStatus, publishReel } from './services/publisher.js';
-import { youtubeAuthUrl, youtubeConfigured, youtubeExchange } from './uploaders/youtube.js';
+import { youtubeAuthUrl, youtubeConfigured, youtubeDisconnect, youtubeExchange } from './uploaders/youtube.js';
+import { instagramConnect, instagramDisconnect } from './uploaders/instagram.js';
 import { flowPrompts } from './services/flowprompts.js';
+import { checkPacks } from './services/packImport.js';
+import { parsePacks } from './services/pack.js';
 
 const rel = (project) => JSON.parse(JSON.stringify(project).split(config.baseUrl).join('')); // browser uses same-origin URLs
 const abs = (project) => JSON.parse(JSON.stringify(project).replace(/"(\/(?:media|assets)\/)/g, `"${config.baseUrl}$1`));
 const ytRedirect = () => `${config.publicUrl || `http://localhost:${config.port}`}/oauth/youtube/callback`;
+const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const okId = (id) => mongoose.isValidObjectId(id) && String(id).length === 24;
 const isLocal = (req) => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress) && !req.headers['x-forwarded-for']; // the renderer on this machine / SSH tunnel; nginx always adds x-forwarded-for
 
 export function createApp() {
@@ -40,27 +49,73 @@ export function createApp() {
     html = gsv ? html.replaceAll('%%GSV%%', gsv) : html.replace(/<meta name="google-site-verification"[^>]*>\s*/g, '');
     res.type('html').send(html);
   };
-  const authOn = !!(config.auth.user && config.auth.pass);
-  const want = authOn ? 'Basic ' + Buffer.from(`${config.auth.user}:${config.auth.pass}`).toString('base64') : '';
-  const loggedIn = (req) => !authOn || isLocal(req) || req.headers.authorization === want;
-  app.get('/', (req, res, next) => (loggedIn(req) ? next() : sitePage('index.html')(req, res)));
+  app.set('trust proxy', 'loopback'); // nginx on this machine: so req.secure / req.ip are the real ones
+
+  // every request: who is logged in? (signed cookie -> user, cached 20 s)
+  app.use((req, _res, next) => { sessionUser(req).then((u) => { req.user = u; next(); }, () => { req.user = null; next(); }); });
+
+  // ---- PUBLIC pages (no login): home / login / privacy / terms. Needed for Google OAuth verification (home page must be public).
+  app.get('/', (req, res, next) => (req.user ? next() : sitePage('index.html')(req, res)));
+  app.get('/login', (req, res) => (req.user ? res.redirect('/') : sitePage('login.html')(req, res)));
+  app.get('/app', (req, res) => res.redirect(req.user ? '/' : '/login')); // "Login" button on the public home page
   app.get(['/privacy', '/privacy-policy'], sitePage('privacy.html'));
   app.get(['/terms', '/terms-of-service'], sitePage('terms.html'));
   app.get('/robots.txt', (_req, res) => res.type('text').send('User-agent: *\nAllow: /\nAllow: /privacy\nAllow: /terms\nDisallow: /api/\n'));
-  // dashboard password (set DASHBOARD_USER + DASHBOARD_PASS). The local renderer (no x-forwarded-for) is let through.
-  if (authOn) {
-    app.use((req, res, next) => {
-      if (loggedIn(req)) return next();
-      res.set('WWW-Authenticate', 'Basic realm="Reels Studio"').status(401).send('Login required');
-    });
-  }
-  app.get('/app', (_req, res) => res.redirect('/')); // "Team login" button: asks for password, then opens the dashboard
   app.get('/healthz', (_req, res) => res.send('ok'));
+
+  // ---- accounts: sign up / log in / log out (public, tiny JSON body only)
+  const pub = (fn) => (req, res) => Promise.resolve(fn(req, res)).catch((e) => { if (!e.status) console.error(e); res.status(e.status || 500).json({ error: e.message }); });
+  const small = express.json({ limit: '20kb' });
+  app.post('/api/auth/register', small, pub(async (req, res) => {
+    const u = await registerUser(req.body || {});
+    setSessionCookie(req, res, u._id);
+    res.json({ user: publicUser(u) });
+  }));
+  app.post('/api/auth/login', small, pub(async (req, res) => {
+    const u = await loginUser(req.body || {}, req.ip);
+    setSessionCookie(req, res, u._id);
+    res.json({ user: publicUser(u) });
+  }));
+  app.post('/api/auth/logout', (_req, res) => { clearSessionCookie(res); res.json({ ok: true }); });
+
+  // ---- everything below needs a login. (The renderer on this machine may only read /media and /assets.)
+  app.use((req, res, next) => {
+    if (req.user) return next();
+    if (isLocal(req) && /^\/(media|assets)(\/|$)/.test(req.path)) return next();
+    if (req.path.startsWith('/api/') || req.path.startsWith('/media/')) return res.status(401).json({ error: 'login required' });
+    res.redirect('/login');
+  });
   app.use(express.json({ limit: '30mb' })); // plan PDFs arrive as base64
+
+  // every video file belongs to one user: /media/(videos|audio|gen)/<reelId>... is only served to its owner (cached for a few minutes)
+  const ownCache = new Map();
+  app.use('/media', (req, res, next) => {
+    if (!req.user) return next(); // the local renderer
+    const m = /^\/(?:videos|audio|gen)\/([a-f0-9]{24})(?:[./]|$)/.exec(req.path);
+    if (!m) return next();
+    const key = `${req.user._id}:${m[1]}`;
+    if ((ownCache.get(key) || 0) > Date.now()) return next();
+    runAs(req.user, async () => !!(await Reel.exists({ _id: m[1] }))).then((own) => {
+      if (!own) return res.status(404).send('not found');
+      if (ownCache.size > 5000) ownCache.clear();
+      ownCache.set(key, Date.now() + 5 * 60e3);
+      next();
+    }, () => res.status(500).send('error'));
+  });
   app.use('/media', express.static(config.paths.storage));
   app.use('/assets', express.static(config.paths.assets));
   app.use(express.static(config.paths.public));
-  const wrap = (fn) => (req, res) => fn(req, res).catch((e) => { console.error(e); res.status(500).json({ error: e.message }); });
+
+  // wrap = run the handler AS the logged-in user: every database query inside is automatically limited to that user's own data
+  const wrap = (fn) => (req, res) => {
+    if (!req.user) return res.status(401).json({ error: 'login required' });
+    return runAs(req.user, () => fn(req, res)).catch((e) => { if (!e.status) console.error(e); if (!res.headersSent) res.status(e.status || 500).json({ error: e.message }); });
+  };
+  const adminOnly = (req, res, next) => (req.user?.isAdmin ? next() : res.status(403).json({ error: 'Sirf admin ke liye' }));
+
+  // ------------------------------------------------ my account
+  app.get('/api/auth/me', (req, res) => res.json({ user: publicUser(req.user) }));
+  app.post('/api/auth/password', wrap(async (req, res) => { await changePassword(req.user._id, req.body?.current, req.body?.next); res.json({ ok: true }); }));
 
   // ------------------------------------------------ status / settings / integrations
   app.get('/api/status', wrap(async (_req, res) => {
@@ -85,7 +140,6 @@ export function createApp() {
     }
     const before = await getSettings();
     const s = await saveSettings(body);
-    setVoiceOverrides(s);
     // new publish times also move the plan that already exists and the videos that are made but not uploaded yet
     const changed = JSON.stringify(before.shortSlots) !== JSON.stringify(s.shortSlots) || before.longSlot !== s.longSlot;
     res.json({ ...s, retimed: changed ? await retimeUpcoming() : null });
@@ -94,13 +148,50 @@ export function createApp() {
   app.get('/api/formats', (_req, res) => res.json(FORMATS.map(({ id, label, shlok, desc }) => ({ id, label, shlok, desc }))));
   app.get('/api/art-styles', (_req, res) => res.json(ART_STYLES.map(({ id, template }) => ({ id, template }))));
 
+  // ---- connect YOUR YouTube channel / Instagram account (each user has their own)
+  const stateFor = (uid) => { const body = `${uid}.${Date.now() + 10 * 60e3}`; return `${body}.${hmac(`yt:${body}`)}`; };
+  const stateOk = (state, uid) => { const [u, exp, sig] = String(state || '').split('.'); return u === String(uid) && Number(exp) > Date.now() && !!sig && safeEqual(hmac(`yt:${u}.${exp}`), sig); };
   app.get('/oauth/youtube', (req, res) => {
-    if (!youtubeConfigured()) return res.status(400).send('.env mein YOUTUBE_CLIENT_ID / YOUTUBE_CLIENT_SECRET daalo');
-    res.redirect(youtubeAuthUrl(ytRedirect()));
+    if (!youtubeConfigured()) return res.status(400).send('Server par YOUTUBE_CLIENT_ID / YOUTUBE_CLIENT_SECRET (.env) nahi hain. Admin se kaho.');
+    res.redirect(youtubeAuthUrl(ytRedirect(), stateFor(req.user._id)));
   });
   app.get('/oauth/youtube/callback', wrap(async (req, res) => {
+    if (req.query.error) return res.status(400).send(`<h3>YouTube connect nahi hua: ${esc(String(req.query.error))}</h3><p><a href="/">Wapas jao</a></p>`);
+    if (!stateOk(req.query.state, req.user._id)) return res.status(400).send('<h3>Link purana ya galat hai. Settings se dobara "YouTube connect" dabao.</h3><p><a href="/">Wapas jao</a></p>');
     await youtubeExchange(String(req.query.code || ''), ytRedirect());
     res.send('<h3>YouTube connected. You can close this tab.</h3><script>setTimeout(()=>location="/",1200)</script>');
+  }));
+  app.get('/api/integrations', wrap(async (_req, res) => res.json(await integrationStatus())));
+  app.delete('/api/integrations/youtube', wrap(async (_req, res) => { await youtubeDisconnect(); res.json({ ok: true }); }));
+  app.post('/api/integrations/instagram', wrap(async (req, res) => {
+    try { res.json({ ok: true, ...(await instagramConnect(req.body || {})) }); } catch (e) { res.status(400).json({ error: e.message }); }
+  }));
+  app.delete('/api/integrations/instagram', wrap(async (_req, res) => { await instagramDisconnect(); res.json({ ok: true }); }));
+
+  // ---- admin: all accounts (who signed up, who connected what, switch an account off, reset a forgotten password)
+  app.get('/api/admin/users', adminOnly, wrap(async (_req, res) => {
+    const out = await runAs(null, async () => { // system view: all users' numbers
+      const users = await User.find().sort({ createdAt: 1 }).lean();
+      const counts = Object.fromEntries((await Reel.aggregate([{ $group: { _id: '$userId', reels: { $sum: 1 }, last: { $max: '$createdAt' } } }])).map((r) => [String(r._id), r]));
+      const links = await Setting.find({ key: { $in: ['secret:youtube_refresh', 'secret:instagram'] } }).select('userId key').setOptions({ allUsers: true }).lean();
+      const has = (uid, k) => links.some((l) => String(l.userId) === String(uid) && l.key === `secret:${k}`);
+      return users.map((u) => ({ id: String(u._id), name: u.name, email: u.email, isAdmin: !!u.isAdmin, disabled: !!u.disabled, createdAt: u.createdAt, lastLoginAt: u.lastLoginAt || null, reels: counts[String(u._id)]?.reels || 0, lastReelAt: counts[String(u._id)]?.last || null, youtube: has(u._id, 'youtube_refresh'), instagram: has(u._id, 'instagram') }));
+    });
+    res.json({ users: out });
+  }));
+  const adminAct = (fn) => [adminOnly, wrap(async (req, res) => {
+    if (!okId(req.params.id)) return res.status(400).json({ error: 'id galat hai' });
+    if (String(req.params.id) === String(req.user._id)) return res.status(400).json({ error: 'Apne account par ye nahi ho sakta' });
+    const r = await fn(req);
+    dropUserCache(req.params.id);
+    res.json(r || { ok: true });
+  })];
+  app.post('/api/admin/users/:id/disable', ...adminAct((req) => User.updateOne({ _id: req.params.id }, { disabled: true })));
+  app.post('/api/admin/users/:id/enable', ...adminAct((req) => User.updateOne({ _id: req.params.id }, { disabled: false })));
+  app.post('/api/admin/users/:id/reset-password', ...adminAct(async (req) => {
+    const pw = String(req.body?.password || '');
+    if (pw.length < 8) { const e = new Error('Password kam se kam 8 akshar ka rakho'); e.status = 400; throw e; }
+    await User.updateOne({ _id: req.params.id }, { passHash: await hashPassword(pw) });
   }));
 
   // ------------------------------------------------ reels
@@ -123,6 +214,7 @@ export function createApp() {
   // ---- one video at a time: stop a video (keeps what it made) and continue it later from the same step
   app.get('/api/queue', wrap(async (_req, res) => res.json(queueState())));
   app.post('/api/reels/:id/pause', wrap(async (req, res) => {
+    if (!okId(req.params.id) || !(await Reel.exists({ _id: req.params.id }))) return res.status(404).json({ error: 'video nahi mili' });
     const r = await pauseReel(req.params.id);
     res.json(r ? { ok: true, state: r } : { error: 'ye video abhi chal nahi rahi / line mein nahi hai' });
   }));
@@ -195,6 +287,7 @@ export function createApp() {
     res.json({ ok: true });
   }));
   app.post('/api/reels/:id/upload', express.raw({ type: '*/*', limit: '300mb' }), wrap(async (req, res) => {
+    if (!okId(req.params.id) || !(await Reel.exists({ _id: req.params.id }))) return res.status(404).json({ error: 'video nahi mili' });
     const ext = String(req.query.ext || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '');
     if (!['jpg', 'jpeg', 'png', 'webp', 'mp4', 'mov', 'webm', 'mp3', 'wav', 'm4a'].includes(ext)) return res.status(400).json({ error: 'file type not allowed' });
     const dir = path.join(config.paths.storage, 'gen', String(req.params.id));
@@ -209,6 +302,7 @@ export function createApp() {
     res.json({ prompts: await flowPrompts(rel(reel.project), { topic: reel.topic }) });
   }));
   app.post('/api/reels/:id/scene-image', wrap(async (req, res) => {
+    if (!okId(req.params.id) || !(await Reel.exists({ _id: req.params.id }))) return res.status(404).json({ error: 'video nahi mili' });
     const art = ART_STYLES.find((a) => a.id === req.body.artStyle) || ART_STYLES[0];
     const r = await generateImage(buildPrompt(art, String(req.body.prompt || 'misty mountains at dawn')), path.join(config.paths.storage, 'gen', String(req.params.id), `ai_${Date.now()}`));
     if (!r) return res.status(502).json({ error: 'Image generate nahi hui (provider keys check karo)' });
@@ -217,6 +311,8 @@ export function createApp() {
 
   // ------------------------------------------------ voice test (Settings -> Test voice)
   app.post('/api/voice/preview', wrap(async (req, res) => {
+    if (queueLength() > 0) return res.status(409).json({ error: 'Abhi videos ban rahi hain (sabki line ek saath chalti hai). Voice test thodi der baad karo. Voice save ho gayi hai, agli video usi mein banegi.' });
+    setVoiceOverrides(await getSettings()); // machine is idle: safe to switch to this user's voice for the sample
     const [row] = await romanToSpeak([String(req.body.text || 'Raat ke do baje, phone haath mein, aur dimaag mein wahi purani *overthinking*. Tum thak chuke ho, kamzor nahi.')]);
     const r = await speakBatch(row);
     if (!r) return res.status(502).json({ error: lastTtsError() || 'koi voice provider configured nahi' });
@@ -345,6 +441,22 @@ export function createApp() {
     const start = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body?.startDate || '')) ? req.body.startDate : todayIST();
     res.json(await importOwnScripts({ text, startDate: start }));
   }));
+  // Script Pack: scripts written outside (fixed JSON format). Used word for word, nothing is rewritten by the software's AI.
+  const packInput = (req) => { const t = req.body?.text ?? req.body?.pack; if (t == null || t === '') { const e = new Error('Script Pack paste karo'); e.status = 400; throw e; } if (typeof t === 'string' && t.length > 400000) { const e = new Error('Pack bahut bada hai, do hisson mein daalo'); e.status = 400; throw e; } return t; };
+  app.post('/api/pack/check', wrap(async (req, res) => {
+    try { res.json(checkPacks(packInput(req))); } catch (e) { res.status(e.status || 400).json({ error: e.message }); }
+  }));
+  app.post('/api/pack/import', wrap(async (req, res) => {
+    let packs;
+    try { packs = parsePacks(packInput(req)); } catch (e) { return res.status(e.status || 400).json({ error: e.message }); }
+    const start = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body?.startDate || '')) ? req.body.startDate : todayIST();
+    const r = await importPacks(packs, { startDate: start });
+    if (!r.created && r.warnings.length) return res.status(400).json({ error: r.warnings.slice(0, 3).join(' | '), ...r });
+    res.json(r);
+  }));
+  const docFile = (name) => wrap(async (_req, res) => { try { res.type('text').send(await fs.readFile(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'docs', name), 'utf8')); } catch { res.status(404).type('text').send(`docs/${name} nahi mila`); } });
+  app.get('/api/pack/prompt', docFile('SCRIPT_PACK_PROMPT.txt')); // the master prompt to paste into a NEW chat with Claude
+  app.get('/api/pack/example', docFile('example-pack.json'));
   // Weekly plan from a PDF / image / text: { text?, file?: { name, mime, data(base64) }, startDate?, brief? }
   app.post('/api/plan/week/import', wrap(async (req, res) => {
     const { text = '', file = null, startDate, brief = '' } = req.body || {};

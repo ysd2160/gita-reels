@@ -31,8 +31,8 @@ cp .env.example .env && nano .env
 GEMINI_API_KEY=...
 MONGODB_URI=mongodb+srv://...            # Atlas
 CLOUDFLARE_ACCOUNT_ID=...  CLOUDFLARE_API_TOKEN=...
-DASHBOARD_USER=admin
-DASHBOARD_PASS=<lamba strong password>
+ADMIN_EMAIL=<tumhari email>
+SIGNUP_CODE=<ek code jo sirf tum doge>
 PUBLIC_URL=https://reels.yourdomain.com
 YOUTUBE_CLIENT_ID=...  YOUTUBE_CLIENT_SECRET=...
 IG_USER_ID=...  IG_ACCESS_TOKEN=...
@@ -56,7 +56,7 @@ journalctl -u gita-reels -f              # live logs
 ```bash
 sudo certbot --nginx -d reels.yourdomain.com
 ```
-Ab `https://reels.yourdomain.com` kholo, `DASHBOARD_USER/PASS` se login.
+Ab `https://reels.yourdomain.com` kholo, Sign up karo (`ADMIN_EMAIL` wali email admin banti hai), phir login.
 
 **Option B (domain nahi hai):** laptop se `ssh -i key.pem -L 4000:localhost:4000 ubuntu@<IP>` chalao aur browser mein `http://localhost:4000` kholo. YouTube connect bhi isi tarah ho jayega (redirect localhost wala hi rahega, `PUBLIC_URL` khaali chhodo).
 

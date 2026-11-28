@@ -2,8 +2,8 @@ import path from 'node:path';
 import { config } from '../config.js';
 import { Reel } from '../models.js';
 import { getSettings } from './settings.js';
-import { instagramConfigured, uploadInstagramReel } from '../uploaders/instagram.js';
-import { uploadYoutube, youtubeConfigured, youtubeConnected } from '../uploaders/youtube.js';
+import { instagramCreds, uploadInstagramReel } from '../uploaders/instagram.js';
+import { uploadYoutube, youtubeAccount, youtubeConfigured, youtubeConnected } from '../uploaders/youtube.js';
 
 const stamp = (s) => { const m = Math.floor(s / 60); return `${m}:${String(Math.floor(s % 60)).padStart(2, '0')}`; };
 
@@ -18,10 +18,13 @@ export function youtubeText(reel) {
   return { title: `${sc.hookText || reel.topic} #Shorts`, description: `${sc.caption || ''}\n\n${tags} #Shorts`, tags: tags.split(/\s+/).map((t) => t.replace('#', '')).filter(Boolean) };
 }
 
+/** The connected accounts of the LOGGED-IN user (YouTube channel + Instagram), shown in Settings and used by platformStatus. */
 export async function integrationStatus() {
+  const ig = await instagramCreds();
+  const connected = await youtubeConnected();
   return {
-    youtube: { configured: youtubeConfigured(), connected: await youtubeConnected() },
-    instagram: { configured: instagramConfigured() },
+    youtube: { configured: youtubeConfigured(), connected, account: connected ? await youtubeAccount() : '' },
+    instagram: { configured: !!ig, username: ig?.username || '', userId: ig?.userId || '' },
   };
 }
 
@@ -43,7 +46,7 @@ export function platformStatus(reel, st, integ) {
     const enabled = name === 'youtube' ? st.youtube : st.instagram;
     const i = integ[name] || {};
     if (!enabled) return { name, label, state: 'off', text: 'Settings mein band hai' };
-    if (!i.configured) return { name, label, state: 'off', text: name === 'youtube' ? 'YouTube keys .env mein nahi hain' : 'Instagram token .env mein nahi hai' };
+    if (!i.configured) return { name, label, state: 'off', text: name === 'youtube' ? 'Server par YouTube keys (.env) nahi hain' : 'Instagram connect nahi hua (Settings -> Instagram)' };
     if (name === 'youtube' && !i.connected) return { name, label, state: 'off', text: 'YouTube connect nahi hua (Settings -> YouTube connect)' };
     if (pub.busy) return { name, label, state: 'uploading', text: 'Upload ho rahi hai...' };
     if (reel.status === 'approved') return { name, label, state: 'pending', text: st.autoPublish ? 'Time par khud upload hogi' : 'Auto-post band hai, "Abhi post karo" dabao' };
@@ -65,7 +68,7 @@ export async function publishReel(id, { now = false } = {}) {
   if (st.youtube && youtubeConfigured() && (await youtubeConnected()) && state.youtube?.state !== 'done') {
     jobs.push(['youtube', async () => uploadYoutube({ file, ...youtubeText(reel), privacy: st.youtubePrivacy, publishAt: when ? new Date(when) : null })]);
   }
-  if (reel.format === 'short' && st.instagram && instagramConfigured() && state.instagram?.state !== 'done') {
+  if (reel.format === 'short' && st.instagram && (await instagramCreds()) && state.instagram?.state !== 'done') {
     const sc = reel.script || {};
     jobs.push(['instagram', async () => uploadInstagramReel({ file, caption: `${sc.caption || ''}\n\n${(sc.hashtags || []).slice(0, 25).join(' ')}` })]);
   }

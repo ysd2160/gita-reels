@@ -1,4 +1,5 @@
 import { Setting } from '../models.js';
+import { decrypt, encrypt } from '../crypto.js';
 
 export const DEFAULTS = {
   automation: false, // true = the daily plan is generated automatically at generateAt
@@ -11,6 +12,7 @@ export const DEFAULTS = {
   planDays: 7,
   reelLength: 'auto', // auto | 30 | 45 | 60 | 90 | 120 (seconds) - target length of every short
   shlokPercent: 0, // shlok is switched off: every video is a story
+  aiScripts: true, // false = the software's own AI never writes a script: only scripts YOU paste (Script Pack / own scripts) are made into videos
   prewriteScripts: true, // write today's scripts in advance so the Home page shows them
   keepHours: 24, // all files (images, audio, video) of a reel are deleted this many hours after generation
   autoApprove: true, // true = ready videos are approved automatically (set false to review each video first)
@@ -33,5 +35,15 @@ export async function saveSettings(patch) {
   for (const k of Object.keys(patch)) if (k in DEFAULTS) await Setting.updateOne({ key: k }, { key: k, value: patch[k] }, { upsert: true });
   return getSettings();
 }
-export const getSecret = async (key) => (await Setting.findOne({ key: `secret:${key}` }))?.value || null;
-export const setSecret = (key, value) => Setting.updateOne({ key: `secret:${key}` }, { key: `secret:${key}`, value }, { upsert: true });
+// ---- per-user secrets (YouTube refresh token, Instagram token). Stored encrypted (AES-256-GCM, key from storage/.session_secret / SESSION_SECRET).
+// Old plain-text values (single-user installs) are still readable and get encrypted the next time they are saved.
+export async function getSecret(key) {
+  const v = (await Setting.findOne({ key: `secret:${key}` }))?.value;
+  if (v == null || v === '') return null;
+  if (typeof v === 'string' && v.startsWith('enc1:')) {
+    try { return decrypt(v); } catch { return null; } // key changed / corrupt = treated as "not connected"
+  }
+  return v;
+}
+export const setSecret = (key, value) => Setting.updateOne({ key: `secret:${key}` }, { key: `secret:${key}`, value: encrypt(value) }, { upsert: true });
+export const deleteSecret = (key) => Setting.deleteOne({ key: `secret:${key}` });

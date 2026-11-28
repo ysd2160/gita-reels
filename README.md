@@ -2,6 +2,9 @@
 
 Plan -> script -> natural voice + shloka chant -> AI images animated -> music -> render -> **edit in the dashboard** -> approve -> **auto-upload** (YouTube + Instagram).
 
+## Multi-user
+Many users on one server: each signs up, connects their own YouTube + Instagram, and has separate plan/videos/settings. **Read `MULTIUSER.md`.**
+
 ## Setup
 1. Node 20+, MongoDB. `npm install`
 2. `.env.example` -> `.env`. Minimum: `GEMINI_API_KEY`. Better: `SARVAM_API_KEY` (voice) + `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_API_TOKEN` (free AI images).
@@ -40,7 +43,7 @@ Audio, AI images, uploads and music of a video stay until you **approve** it (so
 - Auto-approve and auto-publish are ON by default now, so every video goes out at its publish time without a click (switch off in Settings to review first).
 - A failed generation is retried twice automatically; a failed upload is retried every 10 min (max 5).
 - Calendar shows days that were planned but never generated as "Missed".
-- Server: set `DASHBOARD_USER` / `DASHBOARD_PASS` (basic-auth) and `PUBLIC_URL`. See `AWS-DEPLOY.md` for the full EC2 guide.
+- Server: set `ADMIN_EMAIL`, `SIGNUP_CODE` and `PUBLIC_URL` (login is per user now, see `MULTIUSER.md`). See `AWS-DEPLOY.md` for the full EC2 guide.
 
 ## Script engine v5 (30-60 sec reels, many formats, no repeated shloks)
 - **9 reel formats** (`server/formats.js`): Dard→Gita→Shlok, Shlok Decode, Kahani→Shlok (these 3 chant a shlok) and Arjun-Krishna sawaal-jawab, Kahani, Raaz/Anjaani baat, Deep baat (3 sacchaiyan), Myth vs Gita, Aaj ka challenge (**no shlok, no chant**). A format is chosen automatically (never the same one twice in a day, recent ones are avoided) or picked by you per video.

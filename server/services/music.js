@@ -84,12 +84,18 @@ export function synthAmbient(durationSec, { seed = 1, events = [] } = {}) {
 }
 
 /** Pick music for a reel: your own file (assets/music) or generated ambience. Returns file path (inside outDir) / URL part. */
-export async function makeMusic(durationSec, outDir, events, seed) {
+export async function makeMusic(durationSec, outDir, events, seed, mood = '') {
   if (config.music.mode === 'off') return null;
   if (config.music.mode !== 'synth') {
-    const dir = path.join(config.paths.assets, 'music');
-    const files = (await fs.readdir(dir).catch(() => [])).filter((f) => /\.(mp3|wav|m4a)$/i.test(f));
-    if (files.length) return { url: `${config.baseUrl}/assets/music/${encodeURIComponent(files[Math.floor(Math.random() * files.length)])}`, generated: false };
+    // mood folders: assets/music/epic, assets/music/devotional ... (a Script Pack says which mood). No mood folder / no mood = any file in assets/music.
+    const safe = String(mood || '').toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    const lookIn = async (sub) => {
+      const dir = path.join(config.paths.assets, 'music', sub);
+      const files = (await fs.readdir(dir).catch(() => [])).filter((f) => /\.(mp3|wav|m4a)$/i.test(f));
+      return files.length ? { url: `${config.baseUrl}/assets/music/${sub ? `${sub}/` : ''}${encodeURIComponent(files[Math.floor(Math.random() * files.length)])}`, generated: false } : null;
+    };
+    const hit = (safe && (await lookIn(safe))) || (await lookIn(''));
+    if (hit) return hit;
   }
   await fs.mkdir(outDir, { recursive: true });
   const file = path.join(outDir, 'music.wav');

@@ -62,6 +62,7 @@ export function validateScript(s) {
       show: String(l.show || '').trim(),
       visual: String(l.visual || '').trim(),
       image: String(l.image || '').trim(),
+      who: Array.isArray(l.who) ? l.who.map(String).filter(Boolean) : [], // characters in this picture (Script Pack)
     }))
     .filter((l) => l.show || l.speak);
   if (lines.length < 5 || lines.length > 60) throw new Error(`lines count invalid: ${lines.length}`);
@@ -82,11 +83,12 @@ export function validateScript(s) {
     cta: String(s.cta || 'Follow for daily Gita wisdom').trim(),
     caption: String(s.caption || '').trim(),
     hashtags: (Array.isArray(tags) ? tags : String(tags).split(/[\s,]+/)).filter(Boolean).map((h) => String(h).replace(/^#?/, '#')).slice(0, 12),
+    ...(s.pack ? { pack: s.pack } : {}), // Script Pack settings (look, characters, music) survive every edit / re-save
   };
 }
 export const toApiShape = (s) => ({
   format_id: s.formatId, verse_id: s.verseId, grounding_id: s.groundingId, target_sec: s.targetSec, hook_text: s.hookText, lines: s.lines, shlok_line_index: s.shlokLineIndex,
-  cta: s.cta, caption: s.caption, hashtags: s.hashtags, pillar: s.pillar, hook_style: s.hookStyle,
+  cta: s.cta, caption: s.caption, hashtags: s.hashtags, pillar: s.pillar, hook_style: s.hookStyle, pack: s.pack,
 });
 
 const HOOK_STYLES = [

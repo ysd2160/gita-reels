@@ -1,0 +1,7 @@
+# PRONUNCIATION DICTIONARY (only the VOICE uses it, captions are not changed)
+# One rule per line:   word as written in the script  =>  how the voice should read it
+# Whole words only. Save the file, the next video uses it (no restart needed).
+# How to use: generate a video, listen, note every word the voice reads wrong, add it here, e.g.
+#   मार्कंडेय => मारकंडेय
+#   कैलाश => कैलास
+# (the lines above are only examples, remove the # to use them)

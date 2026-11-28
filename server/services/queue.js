@@ -2,11 +2,18 @@ import { config } from '../config.js';
 import { Reel } from '../models.js';
 import { prepareReel, renderStage } from './pipeline.js';
 import { isTimeout } from './control.js';
+import { currentUserId, runAs } from '../context.js';
+import { getSettings } from './settings.js';
+import { setVoiceOverrides } from './tts.js';
+import { User } from '../models.js';
 
 // ONE video at a time (script -> voice -> images -> music -> render), then the next one in line.
 // A running video can be paused (it keeps everything it already made) and resumed later from the same step.
-const waiting = []; // [{ id, stage: 'prep' | 'render' }]
+// Multi-user: the machine renders one video at a time for EVERYONE; users take turns (round-robin) so one user's 4 videos
+// do not make another user wait for the whole day. Each job runs inside its owner's context (own settings, own YouTube/IG).
+const waiting = []; // [{ id, stage: 'prep' | 'render', userId, prio? }]
 let current = null; // { id, ctl }
+let lastUser = null;
 
 export const queueLength = () => waiting.length + (current ? 1 : 0);
 export const queueState = () => ({ running: current ? current.id : null, waiting: waiting.map((j) => j.id) });
@@ -14,29 +21,41 @@ export const queueState = () => ({ running: current ? current.id : null, waiting
 function add(job, front = false) {
   const i = waiting.findIndex((j) => j.id === job.id);
   if (i >= 0) waiting.splice(i, 1);
-  if (front) waiting.unshift(job); else waiting.push(job);
+  job.userId = job.userId || (currentUserId() ? String(currentUserId()) : null);
+  if (front) { job.prio = true; waiting.unshift(job); } else waiting.push(job);
   pump();
 }
-export const enqueue = (id) => add({ id: String(id), stage: 'prep' });
-export const enqueueRender = (id) => add({ id: String(id), stage: 'render' });
+export const enqueue = (id, userId) => add({ id: String(id), stage: 'prep', userId: userId ? String(userId) : null });
+export const enqueueRender = (id, userId) => add({ id: String(id), stage: 'render', userId: userId ? String(userId) : null });
+
+/** next job: a "resume now" job first, else the first job of a DIFFERENT user than the one that just ran, else the oldest */
+function takeNext() {
+  let i = waiting[0]?.prio ? 0 : waiting.findIndex((j) => !j.userId || j.userId !== lastUser);
+  if (i < 0) i = 0;
+  const [job] = waiting.splice(i, 1);
+  lastUser = job.userId;
+  return job;
+}
 
 async function pump() {
   if (current || !waiting.length) return;
-  const job = waiting.shift();
+  const job = takeNext();
   const ctl = new AbortController();
-  current = { id: job.id, ctl };
-  const reel = await Reel.findById(job.id).select('format');
+  current = { id: job.id, ctl, userId: job.userId };
+  const reel = await Reel.findById(job.id).select('format userId').setOptions({ allUsers: true }); // system lookup: we do not know the owner yet
+  const owner = reel?.userId ? await User.findById(reel.userId).select('name email isAdmin').lean().catch(() => null) : null;
   const mins = reel?.format === 'long' ? config.queue.jobMinutesLong : config.queue.jobMinutes;
   const timer = setTimeout(() => ctl.abort(new Error('timeout')), mins * 60e3);
-  const run = (async () => {
+  const run = runAs(owner, async () => { // from here on every query / setting / token is the OWNER's
+    setVoiceOverrides(await getSettings()); // the owner's voice choice (reset to .env values if they picked none)
     if (job.stage === 'render') await renderStage(job.id, { signal: ctl.signal });
     else if (await prepareReel(job.id, { signal: ctl.signal })) await renderStage(job.id, { signal: ctl.signal });
-  })().catch((e) => console.error(e));
+  }).catch((e) => console.error(e));
   // a hung step (e.g. a crashed browser) must not block the line forever
   const forced = new Promise((res) => ctl.signal.addEventListener('abort', () => { if (isTimeout(ctl.signal)) setTimeout(res, 30000); }));
   await Promise.race([run, forced]);
   clearTimeout(timer);
-  if (isTimeout(ctl.signal)) await Reel.updateOne({ _id: job.id, status: { $in: ['scripting', 'voice', 'visuals', 'render_wait', 'rendering'] } }, { status: 'failed', error: `Timeout: ${mins} min mein poori nahi hui` });
+  if (isTimeout(ctl.signal)) await Reel.updateOne({ _id: job.id, status: { $in: ['scripting', 'voice', 'visuals', 'render_wait', 'rendering'] } }, { status: 'failed', error: `Timeout: ${mins} min mein poori nahi hui` }).setOptions({ allUsers: true });
   current = null;
   pump();
 }
@@ -57,7 +76,7 @@ export async function pauseReel(id) {
 /** continue a paused video (it goes to the front of the line). now=true also pauses the video that is running. */
 export async function resumeReel(id, { now = false } = {}) {
   id = String(id);
-  const reel = await Reel.findById(id).select('status project pausedStage');
+  const reel = await Reel.findById(id).select('status project pausedStage'); // scoped: only your own video
   if (!reel) return null;
   let job = waiting.find((j) => j.id === id);
   if (reel.status === 'paused') {
@@ -66,17 +85,19 @@ export async function resumeReel(id, { now = false } = {}) {
     job = { id, stage };
   } else if (!job) return null;
   add(job, true);
-  if (now && current && current.id !== id) await pauseReel(current.id);
+  if (now && current && current.id !== id && String(current.userId) === String(currentUserId())) await pauseReel(current.id); // never stop somebody else's video
   return { stage: job.stage };
 }
 
 /** after a restart: continue whatever was in flight (it resumes from its saved steps, not from zero) */
 export async function recoverQueue() {
-  const prep = await Reel.find({ status: { $in: ['queued', 'scripting', 'voice', 'visuals'] } }).sort({ createdAt: 1 });
-  const rend = await Reel.find({ status: { $in: ['render_wait', 'rendering'] }, project: { $ne: null } }).sort({ createdAt: 1 });
-  const lost = await Reel.find({ status: { $in: ['render_wait', 'rendering'] }, project: null });
-  for (const r of lost) { await Reel.updateOne({ _id: r._id }, { status: 'queued' }); prep.push(r); }
-  rend.forEach((r) => enqueueRender(r._id));
-  prep.forEach((r) => enqueue(r._id));
-  return prep.length + rend.length;
+  return runAs(null, async () => { // system: every user's unfinished videos
+    const prep = await Reel.find({ status: { $in: ['queued', 'scripting', 'voice', 'visuals'] } }).sort({ createdAt: 1 });
+    const rend = await Reel.find({ status: { $in: ['render_wait', 'rendering'] }, project: { $ne: null } }).sort({ createdAt: 1 });
+    const lost = await Reel.find({ status: { $in: ['render_wait', 'rendering'] }, project: null });
+    for (const r of lost) { await Reel.updateOne({ _id: r._id }, { status: 'queued' }); prep.push(r); }
+    rend.forEach((r) => enqueueRender(r._id, r.userId));
+    prep.forEach((r) => enqueue(r._id, r.userId));
+    return prep.length + rend.length;
+  });
 }

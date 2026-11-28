@@ -45,7 +45,7 @@ Folder ka naam **automation-claude** hi rakho: `deploy/setup-ec2.sh`, `deploy/up
 ```bash
 cp .env.example .env && nano .env
 ```
-Zaroori: `GEMINI_API_KEY` (ya `GEMINI_API_KEYS=k1,k2,..`), `MONGODB_URI`, `DASHBOARD_USER`, `DASHBOARD_PASS` (lamba password), `PUBLIC_URL=https://reels.yourdomain.com`.
+Zaroori: `GEMINI_API_KEY` (ya `GEMINI_API_KEYS=k1,k2,..`), `MONGODB_URI`, `ADMIN_EMAIL` (tumhari email), `SIGNUP_CODE` (jis ko account banane dena ho usko do), `PUBLIC_URL=https://reels.yourdomain.com`.
 Optional: `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN` (free images), `SARVAM_API_KEY` (voice), `YOUTUBE_CLIENT_ID/SECRET`, `IG_USER_ID`, `IG_ACCESS_TOKEN`.
 Dusra deployment (doosra channel) chalana ho to alag instance + alag repo + alag `MONGODB_URI`, aur chahe to `PORT=5000`.
 
@@ -70,7 +70,7 @@ HTTPS (DNS chalne ke baad):
 ```bash
 sudo certbot --nginx -d reels.yourdomain.com
 ```
-Phir `https://reels.yourdomain.com` kholo, `DASHBOARD_USER/PASS` se login. YouTube OAuth redirect: `https://reels.yourdomain.com/oauth/youtube/callback`.
+Phir `https://reels.yourdomain.com` kholo, pehle **Sign up** karo (`ADMIN_EMAIL` wali email = admin), phir login. YouTube OAuth redirect: `https://reels.yourdomain.com/oauth/youtube/callback`.
 
 ## 6. Roz ka update (laptop se push -> server par ek command)
 Laptop par: `git add -A && git commit -m "msg" && git push`

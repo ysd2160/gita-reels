@@ -1,14 +1,39 @@
 import fs from 'node:fs/promises';
 import { config } from '../config.js';
+import { isAdminCtx } from '../context.js';
+import { deleteSecret, getSecret, setSecret } from '../services/settings.js';
 
 const GV = process.env.IG_GRAPH_VERSION || 'v25.0';
 const HOST = process.env.IG_GRAPH_HOST || 'graph.facebook.com'; // graph.instagram.com if your token is an Instagram-Login token
-export const instagramConfigured = () => !!(config.instagram.userId && config.instagram.token);
+
+/** This user's Instagram account: saved in Settings (per user). The admin of an old single-user install falls back to IG_USER_ID / IG_ACCESS_TOKEN from .env. */
+export async function instagramCreds() {
+  const own = await getSecret('instagram');
+  if (own?.userId && own?.token) return own;
+  if (isAdminCtx() && config.instagram.userId && config.instagram.token) return { userId: config.instagram.userId, token: config.instagram.token, username: '' };
+  return null;
+}
+export const instagramConfigured = async () => !!(await instagramCreds());
+
+/** Settings -> Instagram connect: check the token really works for this account id, then save it (encrypted). */
+export async function instagramConnect({ userId, token }) {
+  userId = String(userId || '').trim(); token = String(token || '').trim();
+  if (!/^\d{5,25}$/.test(userId)) throw new Error('Instagram User ID sirf numbers hota hai (jaise 17841400000000000)');
+  if (token.length < 20) throw new Error('Access token chhota/galat lag raha hai');
+  const r = await fetch(`https://${HOST}/${GV}/${userId}?fields=username`, { headers: { Authorization: `Bearer ${token}` } });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.error) throw new Error(`Instagram ne token reject kiya: ${String(j.error?.message || r.status).slice(0, 200)}`);
+  await setSecret('instagram', { userId, token, username: j.username || '', savedAt: new Date().toISOString() });
+  return { username: j.username || '' };
+}
+export const instagramDisconnect = () => deleteSecret('instagram');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** Reels via resumable upload straight from disk (no public URL needed). */
 export async function uploadInstagramReel({ file, caption }) {
-  const { userId, token } = config.instagram;
+  const creds = await instagramCreds();
+  if (!creds) throw new Error('Instagram connect nahi hai (Settings -> Instagram)');
+  const { userId, token } = creds;
   const auth = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
   const c = await fetch(`https://${HOST}/${GV}/${userId}/media`, {
     method: 'POST', headers: auth,

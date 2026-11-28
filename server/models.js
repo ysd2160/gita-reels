@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { tenantPlugin } from './tenancy.js';
 const { Schema } = mongoose;
 
 const reelSchema = new Schema(
@@ -37,7 +38,7 @@ const reelSchema = new Schema(
 );
 
 const topicSchema = new Schema(
-  { text: { type: String, required: true, unique: true }, used: { type: Boolean, default: false } },
+  { text: { type: String, required: true }, used: { type: Boolean, default: false } },
   { timestamps: true },
 );
 
@@ -61,12 +62,33 @@ const planSchema = new Schema(
   { timestamps: true },
 );
 
-const settingSchema = new Schema({ key: { type: String, unique: true }, value: Schema.Types.Mixed });
+const settingSchema = new Schema({ key: { type: String }, value: Schema.Types.Mixed });
+
+// every user has their own topics / settings: uniqueness is per user
+topicSchema.index({ userId: 1, text: 1 }, { unique: true });
+settingSchema.index({ userId: 1, key: 1 }, { unique: true });
+
+// ---- multi-user: these four collections belong to ONE user each (see tenancy.js) ----
+for (const s of [reelSchema, topicSchema, planSchema, settingSchema]) s.plugin(tenantPlugin);
+
+// Login accounts. NOT tenant-scoped (this is the tenant list itself).
+const userSchema = new Schema(
+  {
+    name: { type: String, required: true, trim: true },
+    email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+    passHash: { type: String, required: true }, // scrypt$salt$hash
+    isAdmin: { type: Boolean, default: false },
+    disabled: { type: Boolean, default: false },
+    lastLoginAt: Date,
+  },
+  { timestamps: true },
+);
 
 export const Reel = mongoose.model('Reel', reelSchema);
 export const Topic = mongoose.model('Topic', topicSchema);
 export const Plan = mongoose.model('Plan', planSchema);
 export const Setting = mongoose.model('Setting', settingSchema);
+export const User = mongoose.model('User', userSchema);
 
 export const SEED_TOPICS = [
   'Overthinking', 'Heartbreak', 'Failure', 'Anxiety', 'Anger', 'Loneliness', 'Comparing yourself with others',
@@ -77,3 +99,22 @@ export const SEED_LONG = [
   '5 Gita lessons when life feels stuck', 'How Krishna teaches you to stop overthinking', '5 Gita secrets for a calm mind',
   'What the Gita says about failure and comebacks', '5 lessons from the Gita for heartbreak',
 ];
+
+/** Old single-user installs: drop the old global unique indexes (they would block a second user with the same topic / setting key). */
+export async function migrateIndexes() {
+  for (const [M, name] of [[Setting, 'key_1'], [Topic, 'text_1']]) {
+    try { await M.collection.dropIndex(name); console.log(`[migrate] dropped old index ${M.collection.name}.${name}`); } catch { /* not there = fine */ }
+    await M.createIndexes().catch((e) => console.warn('[migrate] index', e.message));
+  }
+}
+
+/** Old single-user data (no userId) belongs to the admin: runs at startup, harmless when there is nothing to claim. */
+export async function claimLegacyData(userId) {
+  let n = 0;
+  for (const M of [Reel, Plan, Topic, Setting]) {
+    const r = await M.updateMany({ userId: { $exists: false } }, { $set: { userId } }).setOptions({ allUsers: true });
+    n += r.modifiedCount || 0;
+  }
+  if (n) console.log(`[migrate] ${n} old record(s) now belong to the admin user`);
+  return n;
+}

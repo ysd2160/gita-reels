@@ -28,7 +28,14 @@ export const config = {
   port: num(env.PORT, 4000),
   host: env.HOST || '127.0.0.1', // 127.0.0.1 = only nginx / SSH tunnel can reach it (safe on AWS)
   publicUrl: (env.PUBLIC_URL || '').replace(/\/$/, ''), // e.g. https://reels.yourdomain.com (needed for YouTube connect on a server)
-  auth: { user: env.DASHBOARD_USER || '', pass: env.DASHBOARD_PASS || '' }, // basic-auth for the dashboard
+  // multi-user login (email + password, cookie session). First user = admin (or ADMIN_EMAIL). See MULTIUSER.md
+  auth: {
+    secret: env.SESSION_SECRET || '', // empty = a random secret is created once in storage/.session_secret
+    allowSignup: bool(env.ALLOW_SIGNUP, true), // false = nobody can sign up (admin account must exist already)
+    signupCode: env.SIGNUP_CODE || '', // if set, new users must type this code to sign up
+    adminEmail: (env.ADMIN_EMAIL || '').trim().toLowerCase(), // this email becomes admin when it signs up
+    sessionDays: num(env.SESSION_DAYS, 30),
+  },
   maxPerDay: num(env.MAX_PER_DAY, 4), // hard cap: never plan/make more than this many videos a day
   mongoUri: env.MONGODB_URI || 'mongodb://127.0.0.1:27017/gita_reels',
   channelName: env.CHANNEL_NAME || '',

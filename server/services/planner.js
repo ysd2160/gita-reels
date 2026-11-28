@@ -7,6 +7,8 @@ import { getSettings } from './settings.js';
 import { computeRetimes } from './retime.js';
 import { enqueue } from './queue.js';
 import { purgeExpired } from './retention.js';
+import { currentUserId } from '../context.js';
+import { buildPack } from './packImport.js';
 import { config } from '../config.js';
 
 const IST = 5.5 * 3600 * 1000;
@@ -75,6 +77,7 @@ export async function retimeUpcoming() {
 /** Make sure every day of the next N days has its planned items (topics chosen by AI in advance). */
 export async function ensurePlan({ brief = '' } = {}) {
   const st = await getSettings();
+  if (st.aiScripts === false) return 0; // only the creator's own scripts are planned (no AI topics / scripts)
   const start = todayIST();
   const want = [];
   const cleared = new Set(await clearedDays());
@@ -141,6 +144,7 @@ export async function newTopicFor(item) {
 /** Start generation for one plan item. */
 export async function runPlanItem(item) {
   if (!item || item.status !== 'planned') return null;
+  if (!item.script && !item.sourceText && (await getSettings()).aiScripts === false) return null; // AI scripts are off: this item has no script of yours
   // already made (or being made) for this plan item: never make it twice
   const made = await Reel.findOne({ planId: item._id, status: { $ne: 'failed' } }).select('status');
   if (made) {
@@ -176,7 +180,8 @@ async function generateAndSave(item) {
 /** fire-and-forget: writes the missing scripts of one day (or several days), one after another. Returns how many are queued. */
 export async function prewriteScripts(dates = todayIST()) {
   const list = Array.isArray(dates) ? dates : [dates];
-  const items = (await Plan.find({ date: { $in: list }, status: 'planned', script: null }).sort({ date: 1, slot: 1 })).filter((i) => !writing.has(String(i._id)));
+  const aiOk = (await getSettings()).aiScripts !== false;
+  const items = (await Plan.find({ date: { $in: list }, status: 'planned', script: null }).sort({ date: 1, slot: 1 })).filter((i) => !writing.has(String(i._id)) && (aiOk || i.sourceText));
   const ids = items.map((i) => String(i._id));
   ids.forEach((id) => writing.add(id));
   (async () => {
@@ -341,6 +346,38 @@ export async function importOwnScripts({ text = '', startDate = todayIST() }) {
   return { ...r, warnings };
 }
 
+/**
+ * Script Packs written outside the software (fixed JSON format, see docs/SCRIPT_PACK_PROMPT.txt).
+ * Each pack becomes ONE planned video with its script already set: nothing is rewritten by the software's AI.
+ * Packs without a "date" fill the days one after another starting at `startDate` (up to your "Shorts per day" setting per day).
+ */
+export async function importPacks(packs, { startDate = todayIST() } = {}) {
+  const st = await getSettings();
+  const perDay = Math.max(1, Math.min(DAY_CAP, Number(st.shorts) || 3));
+  const out = { created: 0, skipped: 0, items: [], warnings: [] };
+  const cleaned = new Set();
+  let seq = 0;
+  for (const [i, p] of packs.entries()) {
+    let b;
+    try { b = buildPack(p, i); } catch (e) { out.skipped++; out.warnings.push(e.message); continue; }
+    out.warnings.push(...b.warnings);
+    const date = b.date || addDays(startDate, Math.floor(seq++ / perDay));
+    if (!cleaned.has(date)) { // this day is now yours: forget "deleted day" marks and remove only AI-filler topics that have no script yet
+      cleaned.add(date);
+      await setCleared((await clearedDays()).filter((d) => d !== date));
+      await setRemoved((await removedItems()).filter((r) => r.date !== date));
+      await Plan.deleteMany({ date, kind: 'short', status: 'planned', reelId: null, script: null, sourceText: { $in: [null, ''] } });
+    }
+    const kept = await Plan.find({ date }).sort({ slot: 1 });
+    if (kept.filter((k) => k.status !== 'skipped').length >= DAY_CAP) { out.skipped++; out.warnings.push(`Reel ${i + 1}: ${date} par pehle se ${DAY_CAP} videos hain, skip hui`); continue; }
+    const slot = kept.filter((k) => k.kind === 'short').reduce((m, k) => Math.max(m, k.slot ?? -1), -1) + 1;
+    const item = await Plan.create({ date, kind: 'short', slot, publishTime: st.shortSlots[slot] || st.shortSlots.at(-1) || '12:00', topic: b.topic, formatId: b.script.formatId, script: b.script, notes: '' });
+    out.created++;
+    out.items.push({ date, topic: item.topic, time: item.publishTime });
+  }
+  return out;
+}
+
 export async function runDay(date) {
   const items = (await Plan.find({ date, status: 'planned' })).sort((a, b) => String(a.publishTime || '').localeCompare(String(b.publishTime || ''))); // one video at a time, in publish-time order
   const made = [];
@@ -383,9 +420,10 @@ export async function tick(approveReel) {
   if (st.autoApprove) for (const r of await Reel.find({ status: 'ready' })) await approveReel(r._id);
 
   // 4) storage keeper: every file of a reel (images, audio, video) is deleted 24h after generation (see retention.js)
-  if (Date.now() - lastPurge > 10 * 60 * 1000) {
-    lastPurge = Date.now();
-    await purgeExpired().catch((e) => console.warn('[storage]', e.message));
+  const me = String(currentUserId() || 'system');
+  if (Date.now() - (lastPurge.get(me) || 0) > 10 * 60 * 1000) {
+    lastPurge.set(me, Date.now());
+    await purgeExpired({ orphans: false }).catch((e) => console.warn('[storage]', e.message)); // orphan folders are swept once for everybody in index.js
   }
 }
-let lastPurge = 0;
+const lastPurge = new Map(); // userId -> last storage clean (every user has their own keep-hours)

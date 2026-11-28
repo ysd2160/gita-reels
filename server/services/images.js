@@ -7,12 +7,14 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // One art style per reel keeps the video coherent; different reels get different looks.
 export const ART_STYLES = [
+  // faces and gods are allowed here: used by Script Packs (mythology stories where the characters must be seen)
+  { id: 'mythic', template: 'saffron-dawn', prefix: 'Indian mythology storytelling illustration, rich saturated colors, dramatic cinematic lighting, traditional ornaments and costumes, expressive detailed faces, consistent character design, painterly digital art' },
   { id: 'epic-painting', template: 'gold-cosmic', prefix: 'epic cinematic digital painting, dramatic volumetric god rays, deep indigo and glowing gold palette, highly detailed, atmospheric depth' },
   { id: 'temple-mural', template: 'saffron-dawn', prefix: 'ancient Indian temple mural art, Pahari miniature painting inspired, rich saffron red and gold, intricate fine detail, warm lamp glow' },
   { id: 'moody-noir', template: 'midnight-lotus', prefix: 'moody cinematic photograph, dark teal shadows with warm candle light, shallow depth of field, subtle film grain, 35mm' },
   { id: 'ethereal-ink', template: 'midnight-lotus', prefix: 'ethereal ink and watercolor illustration, soft misty gradients, muted blue and gold, dreamlike, delicate brush texture' },
 ];
-const SUFFIX = 'vertical composition, subject centered, no text, no letters, no watermark';
+export const SUFFIX = 'vertical composition, subject centered, no text, no letters, no watermark';
 export const buildPrompt = (style, scene) => `${style.prefix}. ${scene}. ${SUFFIX}`.slice(0, 1800);
 
 // ---------------------------------------------------------------- providers -> Buffer (or null)

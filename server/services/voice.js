@@ -7,6 +7,7 @@ import { speakBatch, edgeLine, ttsSignature, edgeAllowed, lastTtsError } from '.
 import { CHANT_HOLD, GAP_LINE, GAP_SPEECH, LEAD_IN, TAIL, CAP_LEAD, wordTimings, wordTimingsRuns } from './timeline.js';
 import { getShloks } from './shape.js';
 import { stopIf } from './control.js';
+import { pronounce } from './pack.js';
 
 const endPunct = (s) => (/[।?!.…]$/.test(s.trim()) ? s.trim() : `${s.trim()}।`);
 const sha = (s) => crypto.createHash('sha1').update(s).digest('hex').slice(0, 10);
@@ -113,7 +114,7 @@ export async function buildVoice(script, dir, { signal } = {}) {
     const f0 = req.blocks[0].first, f1 = req.blocks.at(-1).last;
     const reqLines = script.lines.slice(f0, f1 + 1);
     if (reqs.length > 1) console.log(`[voice] part ${ri + 1}/${reqs.length} (${req.chars} chars)`);
-    const r = await cachedSpeak(reqLines.map((l) => endPunct(l.speak)).join(' '));
+    const r = await cachedSpeak(reqLines.map((l) => endPunct(pronounce(l.speak))).join(' ')); // assets/pronounce.txt fixes words the voice reads wrong
     if (r) {
       provider = r.provider;
       const pcm = normalize(r.pcm);

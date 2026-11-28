@@ -1,15 +1,26 @@
 import fs from 'node:fs/promises';
 import { config } from '../config.js';
-import { getSecret, setSecret } from '../services/settings.js';
+import { deleteSecret, getSecret, setSecret } from '../services/settings.js';
 
-const SCOPE = 'https://www.googleapis.com/auth/youtube.upload';
+// youtube.upload = the only YouTube permission. openid+email only tell US which Google account the user connected (shown in Settings).
+const SCOPE = 'https://www.googleapis.com/auth/youtube.upload openid email';
 export const youtubeConfigured = () => !!(config.youtube.clientId && config.youtube.clientSecret);
 export const youtubeConnected = async () => !!(await getSecret('youtube_refresh'));
 
-export function youtubeAuthUrl(redirectUri) {
+export const youtubeAccount = async () => (await getSecret('youtube_account')) || '';
+
+export function youtubeAuthUrl(redirectUri, state = '') {
   return `https://accounts.google.com/o/oauth2/v2/auth?${new URLSearchParams({
-    client_id: config.youtube.clientId, redirect_uri: redirectUri, response_type: 'code', scope: SCOPE, access_type: 'offline', prompt: 'consent',
+    client_id: config.youtube.clientId, redirect_uri: redirectUri, response_type: 'code', scope: SCOPE, access_type: 'offline', prompt: 'consent select_account', state,
   })}`;
+}
+
+/** Forget this user's YouTube channel (and tell Google to cancel the permission). */
+export async function youtubeDisconnect() {
+  const refresh = await getSecret('youtube_refresh');
+  if (refresh) await fetch('https://oauth2.googleapis.com/revoke', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ token: refresh }) }).catch(() => {});
+  await deleteSecret('youtube_refresh');
+  await deleteSecret('youtube_account');
 }
 
 export async function youtubeExchange(code, redirectUri) {
@@ -20,6 +31,9 @@ export async function youtubeExchange(code, redirectUri) {
   const j = await r.json();
   if (!r.ok || !j.refresh_token) throw new Error(`YouTube auth failed: ${j.error_description || j.error || 'no refresh token (try again, prompt=consent)'}`);
   await setSecret('youtube_refresh', j.refresh_token);
+  let email = '';
+  try { email = JSON.parse(Buffer.from(String(j.id_token || '').split('.')[1] || '', 'base64url').toString('utf8')).email || ''; } catch { /* id_token is optional info */ }
+  await setSecret('youtube_account', email);
 }
 
 async function accessToken() {

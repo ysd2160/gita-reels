@@ -10,11 +10,13 @@ const T = () => config.tts;
 let lastError = '';
 export const lastTtsError = () => lastError;
 
-// voices picked in the dashboard override .env
+// voices picked in the dashboard override .env. Every user picks their own: the queue calls this before each video (one video at a time),
+// and it always starts from the .env values, so one user's voice never leaks into another user's video.
+const BASE_VOICE = { gemini: T().gemini.voice, sarvam: T().sarvam.speaker, eleven: T().elevenlabs.voiceId };
 export function setVoiceOverrides(o = {}) {
-  if (o.voiceGemini) T().gemini.voice = o.voiceGemini;
-  if (o.voiceSarvam) T().sarvam.speaker = o.voiceSarvam;
-  if (o.voiceEleven) T().elevenlabs.voiceId = o.voiceEleven;
+  T().gemini.voice = o.voiceGemini || BASE_VOICE.gemini;
+  T().sarvam.speaker = o.voiceSarvam || BASE_VOICE.sarvam;
+  T().elevenlabs.voiceId = o.voiceEleven || BASE_VOICE.eleven;
 }
 
 export const providerEnabled = (p) =>

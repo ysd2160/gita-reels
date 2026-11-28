@@ -12,6 +12,7 @@ import { buildVoice } from './voice.js';
 import { ART_STYLES, buildPrompt, generateImage, imageProvidersAvailable, mapLimit } from './images.js';
 import { findLocal, findStock } from './visuals.js';
 import { makeMusic } from './music.js';
+import { packPrompt } from './pack.js';
 import { renderReel } from './render.js';
 import { nextSlot } from './scheduler.js';
 import { DEFAULT_LAYOUT, VARIANTS as FORMAT_VARIANTS, VARIANT_LAYOUT } from './shape.js';
@@ -103,7 +104,12 @@ async function attachVisuals(scenes, script, style, id, usedIds, shloks, { signa
     if (hasAI) {
       let scene = sacred ? pick(SACRED) : (sc.prompt || line.image);
       if (sc.part) scene += `, ${VARIANTS[(sc.part - 1) % VARIANTS.length]}`;
-      const r = await generateImage(buildPrompt(art, scene), path.join(dir, `scene${i}`));
+      // Script Pack: the picture is exactly what the script says, with the fixed look and the exact description of every character in it
+      const locked = !!script.pack?.locked;
+      const who = locked ? script.lines.slice(sc.line, Math.max(sc.line, sc.last ?? sc.line) + 1).flatMap((l) => l.who || []) : [];
+      const prompt = locked ? packPrompt(script, art, scene, who) : buildPrompt(art, scene);
+      let r = null;
+      for (let t = 0; t < (locked ? 3 : 1) && !r; t++) r = await generateImage(prompt, path.join(dir, `scene${i}`)); // a locked script retries before it falls back to a stock picture
       if (r) v = { type: 'image', url: `${config.baseUrl}/media/gen/${id}/${path.basename(r.file)}` };
     }
     if (!v && sacred) v = await findLocal('image', usedIds); // your own Krishna art, if you added some
@@ -176,11 +182,15 @@ export async function prepareReel(id, { signal } = {}) {
     let style = work.style;
     if (!style) {
       style = reel.style?.artStyle ? reel.style : pickStyle((await Reel.findOne({ _id: { $ne: id }, style: { $ne: null } }).sort({ createdAt: -1 }))?.style, format);
+      if (script.pack?.locked && format === 'short') { // Script Pack: ONE fixed look for every video (same art style, same layout)
+        const art0 = ART_STYLES.find((a) => a.id === 'mythic') || ART_STYLES[0];
+        style = { ...style, artStyle: art0.id, templateId: art0.template, variant: script.pack.variant || 'frame', ...(script.pack.captionStyle ? { captionStyle: script.pack.captionStyle } : {}) };
+      }
       await Reel.updateOne({ _id: id }, { $set: { 'work.style': style } });
     }
     const usedIds = new Set((await Reel.find({ _id: { $ne: id } }).sort({ createdAt: -1 }).limit(12).select('visualIds')).flatMap((r) => r.visualIds || []));
     const scenes = Array.isArray(work.scenes) && work.scenes.length ? work.scenes : planScenes(voice.lines, voice.durationSec, format);
-    if (!work.scenes?.length) { await storyboard(scenes, script, { log }); await Reel.updateOne({ _id: id }, { $set: { 'work.scenes': scenes } }); } // prompts saved: a resume does not ask again
+    if (!work.scenes?.length) { if (script.pack?.locked) log('visuals: Script Pack ke apne scene prompts use ho rahe hain (storyboard AI band)'); else await storyboard(scenes, script, { log }); await Reel.updateOne({ _id: id }, { $set: { 'work.scenes': scenes } }); } // prompts saved: a resume does not ask again
     for (const sc of scenes) if (sc.type && sc.type !== 'none' && !(await sceneFileOk(sc))) { sc.type = undefined; sc.url = ''; }
     const resumedScenes = scenes.filter((s) => s.type && s.type !== 'none').length;
     if (resumedScenes) log(`visuals: ${resumedScenes}/${scenes.length} scenes pehle se ready (resume)`);
@@ -195,7 +205,7 @@ export async function prepareReel(id, { signal } = {}) {
     stopIf(signal);
     await set(reel, { progress: 62 });
     const seed = Math.floor(Math.random() * 100000);
-    const music = await makeMusic(voice.durationSec, audioDir(id), [{ t: 0.1, kind: 'bowl' }, ...voice.shloks.map((s) => ({ t: s.from, kind: 'swell' }))], seed);
+    const music = await makeMusic(voice.durationSec, audioDir(id), [{ t: 0.1, kind: 'bowl' }, ...voice.shloks.map((s) => ({ t: s.from, kind: 'swell' }))], seed, script.pack?.music || '');
 
     const audioUrl = (f) => `${config.baseUrl}/media/audio/${id}/${path.basename(f)}`;
     const project = {

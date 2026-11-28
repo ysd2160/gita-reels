@@ -41,7 +41,7 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{border:1px solid 
 <p>This Privacy Policy explains how <strong>codwebx</strong> ("codwebx", "we", "us", "our"), an IT company based in Ahmedabad, Gujarat, India, collects, uses, stores and protects information. It applies to our company website (<a href="https://codwebx.in">codwebx.in</a>) and to our content-publishing application <strong>codwebx Reels Studio</strong> (<a href="https://reel.codwebx.in">reel.codwebx.in</a>).</p>
 
 <h2>1. Who we are</h2>
-<p>codwebx builds websites, apps, custom software and POS systems for businesses. codwebx Reels Studio is an internal tool that we use to create short-form and long-form videos (such as Hindi/Hinglish spiritual-wisdom content) and publish them to our own YouTube and Instagram channels.</p>
+<p>codwebx builds websites, apps, custom software and POS systems for businesses. codwebx Reels Studio is an application that lets registered users create short-form and long-form videos (such as Hindi/Hinglish spiritual-wisdom content) and publish them to the YouTube channel and Instagram account that the user connects.</p>
 <p>Contact: <a href="mailto:codwebx@gmail.com">codwebx@gmail.com</a> &middot; +91 75750 97762 &middot; Ahmedabad, Gujarat, India.</p>
 
 <h2>2. Information we collect</h2>
@@ -51,20 +51,21 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{border:1px solid 
 <li><strong>Technical information:</strong> IP address, browser type, device type, pages visited and timestamps, collected automatically in standard server logs for security and diagnostics.</li>
 </ul>
 <h3>2.2 codwebx Reels Studio (Google / YouTube user data)</h3>
-<p>Reels Studio is operated by codwebx for publishing <em>our own</em> videos. It is not offered as a public service and we do not collect personal data from members of the public through it. When the codwebx administrator connects a YouTube channel, Google asks for permission through the standard OAuth consent screen. We request only the following scope:</p>
+<p>Reels Studio is operated by codwebx. Users create an account with their name, email address and a password (stored only as a salted hash). Each account is separate: a user can only see and publish their own videos. When a user connects their YouTube channel, Google asks for permission through the standard OAuth consent screen. We request the following scopes:</p>
 <table>
 <tr><th>Scope</th><th>Why we need it</th></tr>
 <tr><td><code>https://www.googleapis.com/auth/youtube.upload</code></td><td>To upload videos, with their title, description, tags, privacy status and scheduled publish time, to the connected YouTube channel.</td></tr>
+<tr><td><code>openid</code>, <code>email</code></td><td>Only to show the user which Google account is connected in Settings (we store that email address next to the token).</td></tr>
 </table>
-<p>The only Google user data we receive and store is the OAuth <strong>refresh token</strong> that allows the app to upload videos on behalf of the connected account, plus the ID and URL of videos we upload. We do not read, download, analyse or store your YouTube videos, subscribers, comments, analytics or any other account content.</p>
+<p>The only Google user data we receive and store is the OAuth <strong>refresh token</strong> that allows the app to upload videos on behalf of the connected account, plus the email address of the connected Google account and the ID and URL of videos we upload. We do not read, download, analyse or store your YouTube videos, subscribers, comments, analytics or any other account content.</p>
 <h3>2.3 Instagram (Meta)</h3>
-<p>If the administrator connects an Instagram professional account, we store an access token and use it only to publish our own Reels to that account through Meta's official API.</p>
+<p>If a user connects an Instagram professional account, we store the account ID and access token that the user provides (encrypted) and use them only to publish that user's own Reels to that account through Meta's official API. A user can disconnect YouTube or Instagram at any time in Settings, which deletes the stored token.</p>
 
 <h2>3. How we use information</h2>
 <ul>
 <li>To reply to enquiries, prepare proposals and deliver the services you ask for.</li>
 <li>To keep our website and systems secure, prevent abuse and fix technical problems.</li>
-<li>To upload and schedule our own videos on the connected YouTube / Instagram accounts (Reels Studio only).</li>
+<li>To upload and schedule each user's own videos on the YouTube / Instagram accounts that the same user connected (Reels Studio only).</li>
 <li>To comply with legal obligations.</li>
 </ul>
 <p>We do not sell, rent or trade personal information, and we do not use it for advertising or profiling.</p>
@@ -82,9 +83,9 @@ table{border-collapse:collapse;width:100%;font-size:14px}td,th{border:1px solid 
 
 <h2>5. Storage, security and retention</h2>
 <ul>
-<li>Data is stored on private cloud servers that we control, in a database that is not publicly accessible. The Reels Studio dashboard is protected by a username and password and all traffic uses HTTPS.</li>
+<li>Data is stored on private cloud servers that we control, in a database that is not publicly accessible. The Reels Studio dashboard is protected by each user's email and password, stored tokens are encrypted, and all traffic uses HTTPS.</li>
 <li>Enquiry details are kept for as long as needed to handle your request and for our business records, then deleted on request or when no longer needed.</li>
-<li>The YouTube refresh token is kept until the account is disconnected or access is revoked. Server logs are kept for a limited period for security purposes.</li>
+<li>The YouTube refresh token is kept until the user disconnects the account, access is revoked, or the user's Reels Studio account is deleted. Server logs are kept for a limited period for security purposes.</li>
 <li>No method of transmission or storage is 100% secure, but we use reasonable technical and organisational safeguards.</li>
 </ul>
 

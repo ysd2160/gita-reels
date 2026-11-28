@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex" />
+<title>Login | Reels Studio</title>
+<link rel="icon" type="image/svg+xml" href="data:," />
+<link rel="preconnect" href="https://fonts.googleapis.com" /><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700&display=swap" rel="stylesheet" />
+<style>
+:root{--bg:#121212;--card:#1a1a1a;--line:#2a2a2a;--text:#e8e8e8;--mute:#a0a0a0;--g:#16ea1a}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--text);font:15px/1.6 Sora,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding:20px}
+a{color:var(--g)}.box{width:100%;max-width:400px;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:26px}
+.brand{font-weight:700;font-size:22px;color:#fff;text-decoration:none;display:block;margin-bottom:4px}.brand span{color:var(--g)}
+.sub{color:var(--mute);font-size:13px;margin:0 0 18px}
+.tabs{display:flex;gap:6px;background:#111;border:1px solid var(--line);border-radius:12px;padding:4px;margin-bottom:18px}
+.tabs button{flex:1;border:0;background:none;color:var(--mute);padding:8px;border-radius:9px;font:inherit;font-weight:600;cursor:pointer}
+.tabs button.on{background:var(--g);color:#000}
+label{display:block;font-size:12px;color:var(--mute);margin:12px 0 4px}
+input{width:100%;background:#111;border:1px solid var(--line);border-radius:10px;color:var(--text);padding:11px 12px;font:inherit;outline:none}
+input:focus{border-color:var(--g)}
+.go{width:100%;margin-top:18px;background:var(--g);color:#000;border:0;border-radius:99px;padding:12px;font:inherit;font-weight:700;cursor:pointer}
+.go:disabled{opacity:.5}
+.err{color:#ff6b6b;font-size:13px;min-height:18px;margin-top:12px}
+.foot{margin-top:16px;font-size:12px;color:var(--mute);text-align:center}.hide{display:none}
+</style>
+</head>
+<body>
+<div class="box">
+  <a class="brand" href="/">cod<span>webx</span> Reels</a>
+  <p class="sub">Apna account banao, apni YouTube + Instagram connect karo, aur reels khud ban kar post hongi.</p>
+  <div class="tabs"><button id="tl" class="on" type="button" onclick="mode('login')">Login</button><button id="tr" type="button" onclick="mode('register')">Sign up</button></div>
+  <div id="fName" class="hide"><label>Naam</label><input id="name" autocomplete="name" /></div>
+  <label>Email</label><input id="email" type="email" autocomplete="email" />
+  <label>Password <span id="pwHint" class="hide">(kam se kam 8 akshar)</span></label><input id="pw" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')send()" />
+  <div id="fCode" class="hide"><label>Signup code (agar mila ho)</label><input id="code" autocomplete="off" /></div>
+  <button class="go" id="go" type="button" onclick="send()">Login</button>
+  <div class="err" id="err"></div>
+  <div class="foot"><a href="/">Home</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></div>
+</div>
+<script>
+let m='login';const $=id=>document.getElementById(id);
+function mode(x){m=x;$('tl').classList.toggle('on',x==='login');$('tr').classList.toggle('on',x==='register');
+  for(const id of['fName','pwHint','fCode'])$(id).classList.toggle('hide',x==='login');
+  $('go').textContent=x==='login'?'Login':'Account banao';$('pw').autocomplete=x==='login'?'current-password':'new-password';$('err').textContent=''}
+async function send(){
+  $('err').textContent='';$('go').disabled=true;
+  try{
+    const body={email:$('email').value,password:$('pw').value};
+    if(m==='register'){body.name=$('name').value;body.code=$('code').value}
+    const r=await fetch('/api/auth/'+m,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok){$('err').textContent=j.error||('Error '+r.status);return}
+    location.href='/';
+  }catch(e){$('err').textContent='Server se connect nahi hua'}
+  finally{$('go').disabled=false}
+}
+if(location.hash==='#signup')mode('register');
+</script>
+</body>
+</html>
