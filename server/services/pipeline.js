@@ -145,6 +145,7 @@ export async function prepareReel(id, { signal } = {}) {
   const format = reel.format || 'short';
   const log = (m) => console.log(`[${format} ${String(id).slice(-6)}] ${m}`);
   const work = reel.work || {};
+  if (!reel.work) await Reel.updateOne({ _id: id, work: null }, { $set: { work: {} } }); // work can be null (after retry/regenerate) -> "work.voice" $set would fail (Mongo code 28)
   try {
     stopIf(signal);
     await set(reel, { status: reel.script ? 'voice' : 'scripting', progress: Math.max(reel.progress || 0, 3), error: null, project: null, pausedStage: null });
@@ -196,7 +197,7 @@ export async function prepareReel(id, { signal } = {}) {
     if (resumedScenes) log(`visuals: ${resumedScenes}/${scenes.length} scenes pehle se ready (resume)`);
     let chain = Promise.resolve();
     const persist = () => {
-      chain = chain.then(() => Reel.updateOne({ _id: id }, { $set: { 'work.scenes': scenes, progress: 38 + Math.round((24 * scenes.filter((s) => s.type).length) / Math.max(1, scenes.length)) } })).catch(() => {});
+      chain = chain.then(() => Reel.updateOne({ _id: id }, { $set: { 'work.scenes': scenes, progress: 38 + Math.round((24 * scenes.filter((s) => s.type).length) / Math.max(1, scenes.length)) } })).catch((e) => console.warn(`[${format} ${String(id).slice(-6)}] scene save fail: ${e.message}`));
     };
     await attachVisuals(scenes, script, style, id, usedIds, voice.shloks, { signal, persist });
     await chain;
